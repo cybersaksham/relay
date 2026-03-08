@@ -1,0 +1,177 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+import { deleteEnvironment, updateEnvironment } from "@/lib/api";
+import { parseAliases } from "@/lib/environments";
+import { formatUtcTimestamp } from "@/lib/format";
+import { EnvironmentDetail, TaskSummary } from "@/lib/types";
+
+import {
+  EnvironmentForm,
+  environmentToFormValues,
+} from "@/components/environment-form";
+import { TaskList } from "@/components/task-list";
+
+export function EnvironmentDetailManager({
+  initialDetail,
+  tasks,
+}: {
+  initialDetail: EnvironmentDetail;
+  tasks: TaskSummary[];
+}) {
+  const router = useRouter();
+  const [detail, setDetail] = useState(initialDetail);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function handleUpdate(values: {
+    name: string;
+    slug: string;
+    git_ssh_url: string;
+    default_branch: string;
+    aliases: string[];
+    enabled: boolean;
+  }) {
+    const response = await updateEnvironment(detail.environment.id, values);
+    setDetail(response);
+  }
+
+  async function handleDelete() {
+    setDeletePending(true);
+    setDeleteError(null);
+    try {
+      await deleteEnvironment(detail.environment.id);
+      router.push("/environments");
+      router.refresh();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Failed to delete environment");
+    } finally {
+      setDeletePending(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="page-shell">
+        <div>
+          <h1 className="text-3xl font-semibold text-ink">
+            Environment: {detail.environment.name}
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            <Link
+              href="/environments"
+              className="underline decoration-slate-300 underline-offset-4"
+            >
+              Back to environments
+            </Link>
+          </p>
+        </div>
+
+        <section className="surface overflow-hidden">
+          <div className="surface-header">
+            <h2 className="text-lg font-semibold text-ink">Edit Environment</h2>
+          </div>
+          <div className="surface-body space-y-4">
+            <EnvironmentForm
+              title="Edit Environment"
+              description="Update repo metadata and refresh the source clone for this environment."
+              submitLabel="Save Changes"
+              submittingLabel="Saving..."
+              hideHeader
+              initialValues={environmentToFormValues(detail.environment)}
+              onSubmit={handleUpdate}
+            />
+            <p className="text-sm text-slate-500">
+              Created: {formatUtcTimestamp(detail.environment.created_at)} | Updated:{" "}
+              {formatUtcTimestamp(detail.environment.updated_at)}
+            </p>
+            <p className="text-sm text-slate-500">
+              Source clone:{" "}
+              <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-700">
+                {detail.source_path}
+              </code>
+            </p>
+            <p className="text-sm text-slate-500">
+              Aliases: {parseAliases(detail.environment.aliases).join(", ") || "-"}
+            </p>
+          </div>
+        </section>
+
+        <section className="surface overflow-hidden border-red-200">
+          <div className="surface-header">
+            <h2 className="text-lg font-semibold text-ink">Danger Zone</h2>
+          </div>
+          <div className="surface-body space-y-4">
+            <p className="text-sm text-slate-600">
+              Permanent delete removes this environment and its cached source clone. Existing tasks
+              already linked to this environment will block deletion.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setDeleteError(null);
+                setConfirmDelete(true);
+              }}
+              className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700"
+            >
+              Delete Permanently
+            </button>
+            {deleteError ? <p className="text-sm text-red-700">{deleteError}</p> : null}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-ink">Tasks In This Environment</h2>
+          </div>
+          <TaskList tasks={tasks} />
+        </section>
+      </div>
+
+      {confirmDelete ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 px-4 py-8">
+          <div className="w-full max-w-xl">
+            <div className="mb-3 flex items-center justify-between text-white">
+              <h2 className="text-lg font-semibold">Delete Environment</h2>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="rounded-md border border-white/20 px-3 py-1.5 text-sm transition hover:bg-white/10"
+              >
+                Close
+              </button>
+            </div>
+            <div className="surface p-6">
+              <p className="text-sm text-slate-600">
+                Delete <span className="font-semibold text-ink">{detail.environment.name}</span> and
+                remove its cached source clone. This cannot be undone.
+              </p>
+              {deleteError ? <p className="mt-4 text-sm text-red-700">{deleteError}</p> : null}
+              <div className="mt-6 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deletePending}
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deletePending ? "Deleting..." : "Delete Permanently"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="rounded-md border border-line px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-fog"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}

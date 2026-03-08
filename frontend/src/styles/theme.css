@@ -1,6 +1,27 @@
-.panel-grid {
-  background-image:
-    linear-gradient(to right, rgba(19, 34, 56, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(19, 34, 56, 0.04) 1px, transparent 1px);
-  background-size: 16px 16px;
+.page-shell {
+  @apply space-y-6;
+}
+
+.surface {
+  @apply rounded-xl border border-line bg-sand shadow-sm;
+}
+
+.surface-header {
+  @apply border-b border-line px-5 py-4;
+}
+
+.surface-body {
+  @apply p-5;
+}
+
+.data-table {
+  @apply min-w-full divide-y divide-line text-sm;
+}
+
+.data-table thead th {
+  @apply bg-slate-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500;
+}
+
+.data-table tbody td {
+  @apply px-4 py-3 align-top text-slate-700;
 }

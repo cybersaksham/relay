@@ -5,40 +5,69 @@ import { getDashboard } from "@/lib/api";
 
 export default async function HomePage() {
   const dashboard = await getDashboard();
+  const runningCount = dashboard.recent_tasks.filter((task) => task.status === "running").length;
+  const queuedCount = dashboard.recent_tasks.filter((task) => task.status === "queued").length;
 
   return (
-    <div className="space-y-8">
-      <section className="rounded-[2rem] border border-line bg-white/80 p-8 shadow-panel">
-        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-          <div className="max-w-2xl">
-            <p className="mb-3 text-xs uppercase tracking-[0.3em] text-accent">
-              Relay Control Plane
+    <div className="page-shell">
+      <div>
+        <h1 className="text-3xl font-semibold text-ink">Relay Local</h1>
+        <p className="mt-2 text-sm text-slate-600">
+          Slack-driven local task orchestration with guardrails and workspace isolation.
+        </p>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+        <section className="surface overflow-hidden">
+          <div className="surface-header">
+            <h2 className="text-lg font-semibold text-ink">System Snapshot</h2>
+          </div>
+          <div className="surface-body space-y-2 text-sm text-slate-700">
+            <p>Environments: {dashboard.environment_count}</p>
+            <p>Tasks: {dashboard.recent_tasks.length}</p>
+            <p>Running: {runningCount}</p>
+            <p>Queued: {queuedCount}</p>
+            <p>Banned users: 0</p>
+          </div>
+        </section>
+
+        <section className="surface overflow-hidden">
+          <div className="surface-header">
+            <h2 className="text-lg font-semibold text-ink">Quick Actions</h2>
+          </div>
+          <div className="surface-body space-y-3 text-sm">
+            <p>
+              <Link href="/environments" className="underline decoration-slate-300 underline-offset-4">
+                Create or edit environment
+              </Link>
             </p>
-            <h1 className="text-4xl font-semibold leading-tight text-ink">
-              Operate Slack-triggered Codex tasks with pinned workspaces, strict policy gates, and live run visibility.
-            </h1>
+            <p>
+              <Link href="/tasks" className="underline decoration-slate-300 underline-offset-4">
+                Run a task manually
+              </Link>
+            </p>
+            <p>
+              <Link href="/chats" className="underline decoration-slate-300 underline-offset-4">
+                View read-only general chats
+              </Link>
+            </p>
+            <p>
+              <Link href="/policies" className="underline decoration-slate-300 underline-offset-4">
+                Update guardrail markdown
+              </Link>
+            </p>
+            <p>
+              <Link href="/slack" className="underline decoration-slate-300 underline-offset-4">
+                Inspect Slack request decisions
+              </Link>
+            </p>
           </div>
-          <div className="rounded-3xl bg-accentSoft px-6 py-5">
-            <p className="text-sm text-slate-600">Environment count</p>
-            <p className="text-4xl font-semibold text-accent">{dashboard.environment_count}</p>
-          </div>
-        </div>
-        <div className="mt-6 flex gap-3">
-          <Link
-            href="/environments"
-            className="rounded-full bg-accent px-5 py-2.5 text-sm font-medium text-white"
-          >
-            Manage Environments
-          </Link>
-        </div>
-      </section>
+        </section>
+      </div>
 
       <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold">Recent Tasks</h2>
-            <p className="text-sm text-slate-600">Latest Relay runs across all environments.</p>
-          </div>
+        <div>
+          <h2 className="text-lg font-semibold text-ink">Latest Relay Runs</h2>
         </div>
         <TaskList tasks={dashboard.recent_tasks} />
       </section>

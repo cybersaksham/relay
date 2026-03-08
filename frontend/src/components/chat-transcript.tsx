@@ -11,21 +11,18 @@ function parseResolvedText(payload: string): string {
 
 export function ChatTranscript({ messages }: { messages: TaskMessage[] }) {
   return (
-    <div className="rounded-3xl border border-line bg-white/80 p-5 shadow-panel">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">Transcript</h2>
-          <p className="text-sm text-slate-600">Slack thread history resolved for the portal.</p>
-        </div>
+    <section className="surface overflow-hidden">
+      <div className="surface-header">
+        <h2 className="text-lg font-semibold text-ink">Transcript</h2>
       </div>
-      <div className="space-y-4">
+      <div className="surface-body space-y-3">
         {messages.map((message) => (
           <article
             key={message.id}
-            className={`max-w-3xl rounded-3xl px-4 py-3 ${
+            className={`rounded-lg border px-4 py-3 ${
               message.direction === "outbound"
-                ? "ml-auto bg-accent text-white"
-                : "bg-sand text-ink"
+                ? "border-slate-200 bg-slate-900 text-white"
+                : "border-line bg-slate-50 text-ink"
             }`}
           >
             <div className="mb-2 text-xs uppercase tracking-[0.2em] opacity-70">
@@ -37,6 +34,6 @@ export function ChatTranscript({ messages }: { messages: TaskMessage[] }) {
           </article>
         ))}
       </div>
-    </div>
+    </section>
   );
 }

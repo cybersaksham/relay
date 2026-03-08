@@ -5,12 +5,12 @@
 @tailwind utilities;
 
 :root {
-  --ink: #132238;
-  --sand: #f4efe7;
-  --fog: #f9f7f2;
-  --accent: #005f73;
-  --accent-soft: #d7efe9;
-  --line: rgba(19, 34, 56, 0.12);
+  --ink: #111827;
+  --sand: #ffffff;
+  --fog: #f3f4f6;
+  --accent: #111827;
+  --accent-soft: #e5e7eb;
+  --line: rgba(17, 24, 39, 0.12);
 }
 
 * {
@@ -24,9 +24,7 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(circle at top left, rgba(0, 95, 115, 0.12), transparent 30%),
-    linear-gradient(180deg, #fbfaf7 0%, #f4efe7 100%);
+  background: var(--fog);
   color: var(--ink);
   font-family: "IBM Plex Sans", system-ui, sans-serif;
 }

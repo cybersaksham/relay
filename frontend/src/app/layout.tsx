@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import "@/app/globals.css";
 import "@/styles/theme.css";
+import { AppShellNav } from "@/components/app-shell-nav";
 
 export const metadata: Metadata = {
-  title: "Relay",
+  title: "Relay Local",
   description: "Relay bot management portal",
 };
 
@@ -17,19 +17,21 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <div className="panel-grid min-h-screen">
-          <header className="border-b border-line bg-white/70 backdrop-blur">
-            <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-              <Link href="/" className="text-xl font-semibold tracking-[0.12em] text-accent">
-                RELAY
-              </Link>
-              <nav className="flex items-center gap-6 text-sm text-slate-700">
-                <Link href="/">Dashboard</Link>
-                <Link href="/environments">Environments</Link>
-              </nav>
+        <div className="min-h-screen bg-fog lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
+          <aside className="border-b border-line bg-accent px-5 py-6 text-white lg:border-b-0 lg:border-r">
+            <div className="space-y-8">
+              <div className="space-y-2">
+                <p className="text-xl font-semibold">Relay Local</p>
+                <p className="max-w-[18rem] text-sm leading-6 text-slate-300">
+                  Codex-like local control plane for Slack-driven task orchestration.
+                </p>
+              </div>
+              <AppShellNav />
             </div>
-          </header>
-          <main className="mx-auto w-full max-w-7xl px-6 py-8">{children}</main>
+          </aside>
+          <main className="min-w-0 px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+            <div className="mx-auto max-w-6xl">{children}</div>
+          </main>
         </div>
       </body>
     </html>

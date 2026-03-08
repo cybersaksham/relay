@@ -1,6 +1,10 @@
 # System
 .DS_Store
 
+# Local Policy And Workflow Definitions
+.policies/
+.workflows/
+
 # Root Env
 .env
 .env.*

@@ -45,18 +45,15 @@ export function TerminalStream({
   );
 
   return (
-    <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5 shadow-panel">
-      <div className="mb-4 flex items-center justify-between text-slate-300">
-        <div>
-          <h2 className="text-lg font-semibold text-white">Live Terminal</h2>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-            Read only Codex activity
-          </p>
-        </div>
+    <section className="surface overflow-hidden">
+      <div className="surface-header">
+        <h2 className="text-lg font-semibold text-ink">Live Terminal</h2>
       </div>
-      <pre className="max-h-[520px] overflow-auto whitespace-pre-wrap font-mono text-xs leading-6 text-emerald-200">
-        {terminalText || "Waiting for terminal output..."}
-      </pre>
+      <div className="surface-body">
+        <pre className="max-h-[520px] overflow-auto rounded-lg bg-slate-950 p-4 whitespace-pre-wrap font-mono text-xs leading-6 text-emerald-200">
+          {terminalText || "Waiting for terminal output..."}
+        </pre>
+      </div>
     </section>
   );
 }

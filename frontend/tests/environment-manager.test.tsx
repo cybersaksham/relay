@@ -1,29 +1,21 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EnvironmentManager } from "@/components/environment-manager";
 
 const createEnvironment = vi.fn();
-const updateEnvironment = vi.fn();
-const deleteEnvironment = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   createEnvironment: (...args: unknown[]) => createEnvironment(...args),
-  updateEnvironment: (...args: unknown[]) => updateEnvironment(...args),
-  deleteEnvironment: (...args: unknown[]) => deleteEnvironment(...args),
 }));
 
 describe("EnvironmentManager", () => {
   beforeEach(() => {
     createEnvironment.mockReset();
-    updateEnvironment.mockReset();
-    deleteEnvironment.mockReset();
   });
 
-  it("opens edit and delete flows for an existing environment", async () => {
-    deleteEnvironment.mockResolvedValue({ deleted_id: "env-1" });
-
+  it("renders create and open actions but keeps edit and delete off the list page", () => {
     render(
       <EnvironmentManager
         initialEnvironments={[
@@ -42,20 +34,9 @@ describe("EnvironmentManager", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-    expect(screen.getByRole("heading", { name: "Edit Environment" })).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Newton Web")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-    expect(screen.getByText(/This cannot be undone/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Delete Environment" }));
-
-    await waitFor(() =>
-      expect(deleteEnvironment).toHaveBeenCalledWith("env-1"),
-    );
-    await waitFor(() =>
-      expect(screen.queryByText("Newton Web")).not.toBeInTheDocument(),
-    );
+    expect(screen.getByRole("button", { name: "Create" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 });

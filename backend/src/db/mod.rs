@@ -54,7 +54,10 @@ async fn ensure_sqlite_path(url: &str) -> anyhow::Result<()> {
     }
 
     let path = PathBuf::from(normalized);
-    if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         tokio::fs::create_dir_all(parent).await?;
     }
 

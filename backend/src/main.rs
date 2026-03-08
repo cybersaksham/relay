@@ -40,8 +40,10 @@ async fn main() -> anyhow::Result<()> {
     )?);
     let workflow_registry = Arc::new(WorkflowRegistry::load(&config.paths.workflows_dir)?);
     let workspace_manager = Arc::new(WorkspaceManager::new(config.clone()));
-    let environment_service =
-        Arc::new(EnvironmentService::new(db.pool().clone(), workspace_manager.clone()));
+    let environment_service = Arc::new(EnvironmentService::new(
+        db.pool().clone(),
+        workspace_manager.clone(),
+    ));
     let slack_client = Arc::new(SlackWebClient::new(config.clone()));
     let session_service = Arc::new(SessionService::new(db.pool().clone()));
     let runner: Arc<dyn Runner> = Arc::new(CodexCliRunner::new(config.clone(), db.pool().clone()));

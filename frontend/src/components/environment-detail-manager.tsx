@@ -15,6 +15,19 @@ import {
 } from "@/components/environment-form";
 import { TaskList } from "@/components/task-list";
 
+function sourceStatusCopy(status: string) {
+  switch (status) {
+    case "ready":
+      return "Ready";
+    case "syncing":
+      return "Syncing";
+    case "failed":
+      return "Failed";
+    default:
+      return "Pending";
+  }
+}
+
 export function EnvironmentDetailManager({
   initialDetail,
   tasks,
@@ -95,6 +108,23 @@ export function EnvironmentDetailManager({
                 {detail.source_path}
               </code>
             </p>
+            <p className="text-sm text-slate-500">
+              Source sync status:{" "}
+              <span className="font-medium text-ink">
+                {sourceStatusCopy(detail.environment.source_sync_status)}
+              </span>
+              {detail.environment.source_synced_at ? (
+                <>
+                  {" "}
+                  on {formatUtcTimestamp(detail.environment.source_synced_at)}
+                </>
+              ) : null}
+            </p>
+            {detail.environment.source_sync_error ? (
+              <p className="text-sm text-red-700">
+                Last source sync error: {detail.environment.source_sync_error}
+              </p>
+            ) : null}
             <p className="text-sm text-slate-500">
               Aliases: {parseAliases(detail.environment.aliases).join(", ") || "-"}
             </p>

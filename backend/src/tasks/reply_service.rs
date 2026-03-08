@@ -26,6 +26,9 @@ pub async fn persist_and_send_reply(
     )
     .await?;
 
-    state.slack.post_message(channel_id, thread_ts, text).await?;
+    state
+        .slack
+        .post_message(channel_id, thread_ts, text)
+        .await?;
     Ok(())
 }

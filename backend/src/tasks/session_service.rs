@@ -48,7 +48,12 @@ impl SessionService {
         .await
     }
 
-    pub async fn update_status(&self, session_id: &str, status: &str, workflow_id: Option<&str>) -> Result<()> {
+    pub async fn update_status(
+        &self,
+        session_id: &str,
+        status: &str,
+        workflow_id: Option<&str>,
+    ) -> Result<()> {
         queries::update_session_status(&self.pool, session_id, status, workflow_id).await
     }
 

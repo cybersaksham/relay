@@ -38,6 +38,7 @@ fn resolves_slack_mentions_for_display() {
 fn picks_environment_workflow_when_trigger_matches() {
     let registry = WorkflowRegistry::load(std::path::Path::new("../.workflows"))
         .expect("workflow registry should load");
-    let workflow = match_workflow(&registry, "please review pr 42", None).expect("workflow should match");
+    let workflow =
+        match_workflow(&registry, "please review pr 42", None).expect("workflow should match");
     assert_eq!(workflow.metadata.id, "pr-review");
 }

@@ -67,7 +67,8 @@ export function EnvironmentForm({
     setPending(true);
     setError(null);
 
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const aliases = String(form.get("aliases") ?? "")
       .split(",")
       .map((item) => item.trim())
@@ -83,7 +84,7 @@ export function EnvironmentForm({
         enabled: true,
       });
       if (!initialValues) {
-        event.currentTarget.reset();
+        formElement.reset();
       }
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Failed to save environment");

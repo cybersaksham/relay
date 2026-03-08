@@ -61,7 +61,8 @@ impl Config {
         let relay_home = env_path("RELAY_HOME")
             .or_else(default_relay_home)
             .unwrap_or_else(|| current_dir.join(".relay"));
-        let sources_dir = env_path("RELAY_SOURCES_DIR").unwrap_or_else(|| relay_home.join("sources"));
+        let sources_dir =
+            env_path("RELAY_SOURCES_DIR").unwrap_or_else(|| relay_home.join("sources"));
         let workspaces_dir =
             env_path("RELAY_WORKSPACES_DIR").unwrap_or_else(|| relay_home.join("workspaces"));
         let policies_dir =

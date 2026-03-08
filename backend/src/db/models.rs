@@ -11,6 +11,9 @@ pub struct Environment {
     pub default_branch: String,
     pub aliases: String,
     pub enabled: bool,
+    pub source_sync_status: String,
+    pub source_sync_error: Option<String>,
+    pub source_synced_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

@@ -17,6 +17,9 @@ export interface EnvironmentSummary {
   default_branch: string;
   aliases: string;
   enabled: boolean;
+  source_sync_status: "pending" | "syncing" | "ready" | "failed" | string;
+  source_sync_error: string | null;
+  source_synced_at: string | null;
   created_at: string;
   updated_at: string;
 }

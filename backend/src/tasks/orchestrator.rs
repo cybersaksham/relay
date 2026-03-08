@@ -15,7 +15,10 @@ use crate::slack::SlackEventEnvelope;
 use crate::tasks::reply_service::persist_and_send_reply;
 use crate::workflows::{matcher, renderer};
 
-pub async fn handle_slack_envelope(state: Arc<AppState>, envelope: SlackEventEnvelope) -> Result<()> {
+pub async fn handle_slack_envelope(
+    state: Arc<AppState>,
+    envelope: SlackEventEnvelope,
+) -> Result<()> {
     let event_id = envelope.payload.event_id;
     if !queries::record_slack_event(&state.db, &event_id).await? {
         return Ok(());
@@ -98,7 +101,10 @@ pub async fn handle_slack_envelope(state: Arc<AppState>, envelope: SlackEventEnv
                 .post_message(
                     &channel_id,
                     &thread_ts,
-                    &format!("Request denied. This falls under the critical deny policy: {}.", rule.title),
+                    &format!(
+                        "Request denied. This falls under the critical deny policy: {}.",
+                        rule.title
+                    ),
                 )
                 .await?;
             return Ok(());
@@ -110,16 +116,17 @@ pub async fn handle_slack_envelope(state: Arc<AppState>, envelope: SlackEventEnv
         .find_by_thread(&team_id, &channel_id, &thread_ts)
         .await?;
 
-    let environment = match resolve_environment(&state, existing_session.as_ref(), &request_text).await {
-        Ok(environment) => environment,
-        Err(error) => {
-            state
-                .slack
-                .post_message(&channel_id, &thread_ts, &error.to_string())
-                .await?;
-            return Ok(());
-        }
-    };
+    let environment =
+        match resolve_environment(&state, existing_session.as_ref(), &request_text).await {
+            Ok(environment) => environment,
+            Err(error) => {
+                state
+                    .slack
+                    .post_message(&channel_id, &thread_ts, &error.to_string())
+                    .await?;
+                return Ok(());
+            }
+        };
     let workflow = matcher::match_workflow(&state.workflows, &request_text, environment.as_ref());
 
     let session = match existing_session {
@@ -131,7 +138,11 @@ pub async fn handle_slack_envelope(state: Arc<AppState>, envelope: SlackEventEnv
             let prepared = if let Some(environment) = environment.as_ref() {
                 let source_path = state
                     .workspaces
-                    .ensure_source_clone(&environment.slug, &environment.git_ssh_url, &environment.default_branch)
+                    .ensure_source_clone(
+                        &environment.slug,
+                        &environment.git_ssh_url,
+                        &environment.default_branch,
+                    )
                     .await?;
                 state
                     .workspaces
@@ -190,7 +201,11 @@ pub async fn handle_slack_envelope(state: Arc<AppState>, envelope: SlackEventEnv
 
     state
         .sessions
-        .update_status(&session.id, "running", workflow.as_ref().map(|item| item.metadata.id.as_str()))
+        .update_status(
+            &session.id,
+            "running",
+            workflow.as_ref().map(|item| item.metadata.id.as_str()),
+        )
         .await?;
     let task_run = queries::insert_task_run(
         &state.db,
@@ -235,7 +250,14 @@ pub async fn handle_slack_envelope(state: Arc<AppState>, envelope: SlackEventEnv
         (!output.stderr.trim().is_empty()).then_some(output.stderr.trim()),
     )
     .await?;
-    state.sessions.update_status(&session.id, "idle", workflow.as_ref().map(|item| item.metadata.id.as_str())).await?;
+    state
+        .sessions
+        .update_status(
+            &session.id,
+            "idle",
+            workflow.as_ref().map(|item| item.metadata.id.as_str()),
+        )
+        .await?;
 
     persist_and_send_reply(
         &state,
@@ -251,7 +273,10 @@ pub async fn handle_slack_envelope(state: Arc<AppState>, envelope: SlackEventEnv
     Ok(())
 }
 
-fn enforce_environment_binding(session: &Session, requested_environment: Option<&Environment>) -> Result<()> {
+fn enforce_environment_binding(
+    session: &Session,
+    requested_environment: Option<&Environment>,
+) -> Result<()> {
     match (&session.environment_id, requested_environment) {
         (Some(existing_id), Some(requested)) if existing_id != &requested.id => {
             anyhow::bail!("thread is already bound to a different environment")

@@ -19,7 +19,9 @@ pub struct EnvironmentDetailResponse {
     pub source_path: String,
 }
 
-pub async fn list(State(state): State<Arc<AppState>>) -> Result<Json<Vec<Environment>>, (StatusCode, String)> {
+pub async fn list(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<Environment>>, (StatusCode, String)> {
     state
         .environments
         .list()

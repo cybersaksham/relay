@@ -4,6 +4,7 @@ use std::process::Stdio;
 use anyhow::{anyhow, Context, Result};
 use tokio::fs;
 use tokio::process::Command;
+use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 
 use crate::config::SharedConfig;
@@ -47,7 +48,8 @@ impl WorkspaceManager {
         if previous_slug != next_slug {
             self.delete_source_clone(next_slug).await?;
         }
-        self.ensure_source_clone(next_slug, git_ssh_url, default_branch).await
+        self.ensure_source_clone(next_slug, git_ssh_url, default_branch)
+            .await
     }
 
     pub fn environment_workspace_path(&self, env_slug: &str, workspace_id: &str) -> PathBuf {
@@ -59,7 +61,11 @@ impl WorkspaceManager {
     }
 
     pub fn general_workspace_path(&self, workspace_id: &str) -> PathBuf {
-        self.config.paths.workspaces_dir.join("general").join(workspace_id)
+        self.config
+            .paths
+            .workspaces_dir
+            .join("general")
+            .join(workspace_id)
     }
 
     pub async fn ensure_source_clone(
@@ -70,19 +76,78 @@ impl WorkspaceManager {
     ) -> Result<PathBuf> {
         let path = self.source_path(env_slug);
         if path.exists() {
-            self.git(&path, ["fetch", "--all", "--prune"]).await?;
-            self.git(&path, ["checkout", default_branch]).await?;
-            self.git(&path, ["pull", "--ff-only", "origin", default_branch]).await?;
+            if self
+                .sync_existing_source_clone(&path, default_branch)
+                .await
+                .is_err()
+            {
+                self.delete_source_clone(env_slug).await?;
+                return self
+                    .fresh_clone_source(&path, git_ssh_url, default_branch)
+                    .await;
+            }
             return Ok(path);
         }
 
+        self.fresh_clone_source(&path, git_ssh_url, default_branch)
+            .await
+    }
+
+    async fn sync_existing_source_clone(&self, path: &Path, default_branch: &str) -> Result<()> {
+        if fs::metadata(path.join(".git")).await.is_err() {
+            return Err(anyhow!("existing source path is not a git repository"));
+        }
+
+        self.git(
+            path,
+            ["fetch", "--depth", "1", "--prune", "origin", default_branch],
+        )
+        .await?;
+        self.git(path, ["reset", "--hard", "HEAD"]).await?;
+        self.git(path, ["clean", "-fdx"]).await?;
+        self.git(
+            path,
+            [
+                "checkout",
+                "-B",
+                default_branch,
+                &format!("origin/{default_branch}"),
+            ],
+        )
+        .await?;
+        self.git(
+            path,
+            ["reset", "--hard", &format!("origin/{default_branch}")],
+        )
+        .await?;
+        self.git(path, ["clean", "-fdx"]).await?;
+        Ok(())
+    }
+
+    async fn fresh_clone_source(
+        &self,
+        path: &Path,
+        git_ssh_url: &str,
+        default_branch: &str,
+    ) -> Result<PathBuf> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).await?;
         }
 
         let mut command = Command::new("git");
-        command.arg("clone").arg(git_ssh_url).arg(&path);
-        let output = command.output().await.context("failed to clone source repo")?;
+        command
+            .arg("clone")
+            .arg("--depth")
+            .arg("1")
+            .arg("--branch")
+            .arg(default_branch)
+            .arg("--single-branch")
+            .arg(git_ssh_url)
+            .arg(path);
+        let output = timeout(Duration::from_secs(900), command.output())
+            .await
+            .map_err(|_| anyhow!("git clone timed out after 15 minutes"))?
+            .context("failed to clone source repo")?;
         if !output.status.success() {
             return Err(anyhow!(
                 "git clone failed: {}",
@@ -90,8 +155,7 @@ impl WorkspaceManager {
             ));
         }
 
-        self.git(&path, ["checkout", default_branch]).await?;
-        Ok(path)
+        Ok(path.to_path_buf())
     }
 
     pub async fn prepare_repo_workspace(
@@ -118,7 +182,10 @@ impl WorkspaceManager {
 
         let mut command = Command::new("git");
         command.arg("clone").arg(source_path).arg(&workspace_path);
-        let output = command.output().await.context("failed to clone local source workspace")?;
+        let output = timeout(Duration::from_secs(300), command.output())
+            .await
+            .map_err(|_| anyhow!("git clone from source timed out after 5 minutes"))?
+            .context("failed to clone local source workspace")?;
         if !output.status.success() {
             return Err(anyhow!(
                 "git clone from source failed: {}",
@@ -132,7 +199,10 @@ impl WorkspaceManager {
         })
     }
 
-    pub async fn prepare_general_workspace(&self, workspace_id: Option<&str>) -> Result<PreparedWorkspace> {
+    pub async fn prepare_general_workspace(
+        &self,
+        workspace_id: Option<&str>,
+    ) -> Result<PreparedWorkspace> {
         let workspace_id = workspace_id
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| Uuid::new_v4().to_string());
@@ -156,7 +226,10 @@ impl WorkspaceManager {
             .stdout(Stdio::null())
             .stderr(Stdio::piped());
 
-        let output = command.output().await.context("failed to run git command")?;
+        let output = timeout(Duration::from_secs(300), command.output())
+            .await
+            .map_err(|_| anyhow!("git command timed out after 5 minutes"))?
+            .context("failed to run git command")?;
         if output.status.success() {
             Ok(())
         } else {

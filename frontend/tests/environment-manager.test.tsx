@@ -27,6 +27,9 @@ describe("EnvironmentManager", () => {
             default_branch: "master",
             aliases: JSON.stringify(["newton", "web"]),
             enabled: true,
+            source_sync_status: "ready",
+            source_sync_error: null,
+            source_synced_at: new Date().toISOString(),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
@@ -36,6 +39,7 @@ describe("EnvironmentManager", () => {
 
     expect(screen.getByRole("button", { name: "Create" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open" })).toBeInTheDocument();
+    expect(screen.getByText("Source ready")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });

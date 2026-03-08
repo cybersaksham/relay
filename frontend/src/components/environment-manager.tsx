@@ -10,6 +10,19 @@ import { EnvironmentSummary } from "@/lib/types";
 
 import { EnvironmentForm } from "@/components/environment-form";
 
+function sourceStatusLabel(environment: EnvironmentSummary) {
+  switch (environment.source_sync_status) {
+    case "ready":
+      return "Source ready";
+    case "syncing":
+      return "Source syncing";
+    case "failed":
+      return "Source failed";
+    default:
+      return "Source pending";
+  }
+}
+
 export function EnvironmentManager({
   initialEnvironments,
 }: {
@@ -79,6 +92,11 @@ export function EnvironmentManager({
                     <td>
                       <div className="font-medium text-ink">{environment.name}</div>
                       <div className="mt-1 text-xs text-slate-500">{environment.slug}</div>
+                      <div className="mt-2">
+                        <span className="rounded-full border border-line px-2 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-600">
+                          {sourceStatusLabel(environment)}
+                        </span>
+                      </div>
                       {parseAliases(environment.aliases).length > 0 ? (
                         <div className="mt-2 text-xs text-slate-500">
                           {parseAliases(environment.aliases).join(", ")}

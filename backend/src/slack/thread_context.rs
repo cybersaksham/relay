@@ -26,7 +26,11 @@ pub struct SlackReplyMessage {
     pub text: Option<String>,
 }
 
-pub fn normalize_thread(channel_id: &str, thread_ts: &str, messages: Vec<SlackReplyMessage>) -> Result<NormalizedThread> {
+pub fn normalize_thread(
+    channel_id: &str,
+    thread_ts: &str,
+    messages: Vec<SlackReplyMessage>,
+) -> Result<NormalizedThread> {
     let messages = messages
         .into_iter()
         .map(|message| {

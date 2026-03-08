@@ -12,7 +12,10 @@ use crate::app_state::AppState;
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
-        .route("/api/environments", get(environments::list).post(environments::create))
+        .route(
+            "/api/environments",
+            get(environments::list).post(environments::create),
+        )
         .route(
             "/api/environments/:id",
             get(environments::get)
@@ -23,7 +26,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/tasks", get(tasks::list))
         .route("/api/tasks/:id", get(tasks::get))
         .route("/api/tasks/:id/messages", get(tasks::messages))
-        .route("/api/tasks/:id/terminal/stream", get(streams::terminal_stream))
+        .route(
+            "/api/tasks/:id/terminal/stream",
+            get(streams::terminal_stream),
+        )
         .route("/api/tasks/:id/events/stream", get(streams::events_stream))
         .with_state(state)
 }

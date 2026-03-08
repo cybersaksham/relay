@@ -27,7 +27,8 @@ pub struct PolicyDocument {
 }
 
 pub fn load_policy(path: &Path) -> Result<PolicyDocument> {
-    let content = fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let content =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
     parse_policy(&content).with_context(|| format!("failed to parse {}", path.display()))
 }
 
@@ -67,7 +68,9 @@ pub fn parse_policy(content: &str) -> Result<PolicyDocument> {
     }
 
     if rules.is_empty() {
-        return Err(anyhow!("policy file must contain at least one rule section"));
+        return Err(anyhow!(
+            "policy file must contain at least one rule section"
+        ));
     }
 
     Ok(PolicyDocument { meta, rules })

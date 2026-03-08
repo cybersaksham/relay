@@ -44,11 +44,15 @@ async fn open_and_process(state: Arc<AppState>) -> Result<()> {
 
             if let Some(envelope_id) = value.get("envelope_id").and_then(Value::as_str) {
                 write
-                    .send(Message::Text(json!({ "envelope_id": envelope_id }).to_string().into()))
+                    .send(Message::Text(
+                        json!({ "envelope_id": envelope_id }).to_string().into(),
+                    ))
                     .await?;
             }
 
-            if value.get("payload").is_some() && value.get("type").and_then(Value::as_str) == Some("events_api") {
+            if value.get("payload").is_some()
+                && value.get("type").and_then(Value::as_str) == Some("events_api")
+            {
                 let envelope: SlackEventEnvelope = serde_json::from_value(value)?;
                 let state_clone = state.clone();
                 tokio::spawn(async move {

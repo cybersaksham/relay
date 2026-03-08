@@ -2,8 +2,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use tracing::{error, info};
 
 use crate::db::models::Environment;
 use crate::db::queries;
@@ -66,7 +68,7 @@ impl EnvironmentService {
             return Err(anyhow!("environment slug already exists"));
         }
 
-        git::validate_remote_access(&input.git_ssh_url).await?;
+        git::validate_remote_access(&input.git_ssh_url, &input.default_branch).await?;
 
         let aliases = serde_json::to_string(&input.aliases)?;
         let environment = queries::insert_environment(
@@ -80,18 +82,22 @@ impl EnvironmentService {
         )
         .await?;
 
-        let source_path = self
-            .workspace_manager
-            .ensure_source_clone(&environment.slug, &environment.git_ssh_url, &environment.default_branch)
-            .await?;
+        self.spawn_source_sync(environment.clone());
 
         Ok(EnvironmentWithPaths {
+            source_path: self
+                .source_path_for_slug(&environment.slug)
+                .display()
+                .to_string(),
             environment,
-            source_path: source_path.display().to_string(),
         })
     }
 
-    pub async fn update(&self, id: &str, input: CreateEnvironmentInput) -> Result<EnvironmentWithPaths> {
+    pub async fn update(
+        &self,
+        id: &str,
+        input: CreateEnvironmentInput,
+    ) -> Result<EnvironmentWithPaths> {
         let existing = self
             .get(id)
             .await?
@@ -104,7 +110,7 @@ impl EnvironmentService {
             return Err(anyhow!("environment slug already exists"));
         }
 
-        git::validate_remote_access(&input.git_ssh_url).await?;
+        git::validate_remote_access(&input.git_ssh_url, &input.default_branch).await?;
 
         let aliases = serde_json::to_string(&input.aliases)?;
         let environment = queries::update_environment(
@@ -119,19 +125,14 @@ impl EnvironmentService {
         )
         .await?;
 
-        let source_path = self
-            .workspace_manager
-            .reset_source_clone(
-                &existing.slug,
-                &environment.slug,
-                &environment.git_ssh_url,
-                &environment.default_branch,
-            )
-            .await?;
+        self.spawn_source_sync_with_previous(existing.slug, environment.clone());
 
         Ok(EnvironmentWithPaths {
+            source_path: self
+                .source_path_for_slug(&environment.slug)
+                .display()
+                .to_string(),
             environment,
-            source_path: source_path.display().to_string(),
         })
     }
 
@@ -142,11 +143,15 @@ impl EnvironmentService {
             .ok_or_else(|| anyhow!("environment not found"))?;
 
         if queries::count_sessions_for_environment(&self.pool, id).await? > 0 {
-            return Err(anyhow!("environment cannot be deleted because tasks already reference it"));
+            return Err(anyhow!(
+                "environment cannot be deleted because tasks already reference it"
+            ));
         }
 
         queries::delete_environment(&self.pool, id).await?;
-        self.workspace_manager.delete_source_clone(&environment.slug).await?;
+        self.workspace_manager
+            .delete_source_clone(&environment.slug)
+            .await?;
 
         Ok(DeleteEnvironmentResponse {
             deleted_id: environment.id,
@@ -159,10 +164,13 @@ impl EnvironmentService {
         let mut matches = Vec::new();
 
         for environment in environments {
-            let aliases: Vec<String> = serde_json::from_str(&environment.aliases).unwrap_or_default();
+            let aliases: Vec<String> =
+                serde_json::from_str(&environment.aliases).unwrap_or_default();
             if prompt.contains(&environment.slug.to_lowercase())
                 || prompt.contains(&environment.name.to_lowercase())
-                || aliases.iter().any(|alias| prompt.contains(&alias.to_lowercase()))
+                || aliases
+                    .iter()
+                    .any(|alias| prompt.contains(&alias.to_lowercase()))
             {
                 matches.push(environment);
             }
@@ -181,5 +189,77 @@ impl EnvironmentService {
 
     pub fn source_path_for_slug(&self, slug: &str) -> PathBuf {
         self.workspace_manager.source_path(slug)
+    }
+
+    fn spawn_source_sync(&self, environment: Environment) {
+        self.spawn_source_sync_with_previous(environment.slug.clone(), environment);
+    }
+
+    fn spawn_source_sync_with_previous(&self, previous_slug: String, environment: Environment) {
+        let pool = self.pool.clone();
+        let workspace_manager = self.workspace_manager.clone();
+        tokio::spawn(async move {
+            if let Err(error) = queries::update_environment_source_status(
+                &pool,
+                &environment.id,
+                "syncing",
+                None,
+                None,
+            )
+            .await
+            {
+                error!(environment_id = %environment.id, ?error, "failed to mark environment as syncing");
+            }
+
+            let sync_result = workspace_manager
+                .reset_source_clone(
+                    &previous_slug,
+                    &environment.slug,
+                    &environment.git_ssh_url,
+                    &environment.default_branch,
+                )
+                .await;
+
+            match sync_result {
+                Ok(source_path) => {
+                    info!(
+                        environment_id = %environment.id,
+                        environment_slug = %environment.slug,
+                        source_path = %source_path.display(),
+                        "environment source clone synced"
+                    );
+                    if let Err(error) = queries::update_environment_source_status(
+                        &pool,
+                        &environment.id,
+                        "ready",
+                        None,
+                        Some(Utc::now()),
+                    )
+                    .await
+                    {
+                        error!(environment_id = %environment.id, ?error, "failed to mark environment as ready");
+                    }
+                }
+                Err(sync_error) => {
+                    error!(
+                        environment_id = %environment.id,
+                        environment_slug = %environment.slug,
+                        ?sync_error,
+                        "failed to sync environment source clone"
+                    );
+                    if let Err(error) = queries::update_environment_source_status(
+                        &pool,
+                        &environment.id,
+                        "failed",
+                        Some(&sync_error.to_string()),
+                        None,
+                    )
+                    .await
+                    {
+                        error!(environment_id = %environment.id, ?error, "failed to mark environment as failed");
+                    }
+                }
+            }
+        });
     }
 }

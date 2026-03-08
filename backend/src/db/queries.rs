@@ -6,9 +6,11 @@ use uuid::Uuid;
 use crate::db::models::{Ban, Environment, Session, TaskMessage, TaskRun, TerminalEvent};
 
 pub async fn list_environments(pool: &SqlitePool) -> Result<Vec<Environment>> {
-    Ok(sqlx::query_as::<_, Environment>("SELECT * FROM environments ORDER BY created_at DESC")
-        .fetch_all(pool)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, Environment>("SELECT * FROM environments ORDER BY created_at DESC")
+            .fetch_all(pool)
+            .await?,
+    )
 }
 
 pub async fn count_environments(pool: &SqlitePool) -> Result<i64> {
@@ -19,17 +21,21 @@ pub async fn count_environments(pool: &SqlitePool) -> Result<i64> {
 }
 
 pub async fn get_environment(pool: &SqlitePool, id: &str) -> Result<Option<Environment>> {
-    Ok(sqlx::query_as::<_, Environment>("SELECT * FROM environments WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, Environment>("SELECT * FROM environments WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 pub async fn get_environment_by_slug(pool: &SqlitePool, slug: &str) -> Result<Option<Environment>> {
-    Ok(sqlx::query_as::<_, Environment>("SELECT * FROM environments WHERE slug = ?")
-        .bind(slug)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, Environment>("SELECT * FROM environments WHERE slug = ?")
+            .bind(slug)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 pub async fn get_environment_by_slug_excluding_id(
@@ -58,8 +64,9 @@ pub async fn insert_environment(
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();
     sqlx::query(
-        "INSERT INTO environments (id, name, slug, git_ssh_url, default_branch, aliases, enabled, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO environments (
+            id, name, slug, git_ssh_url, default_branch, aliases, enabled, source_sync_status, source_sync_error, source_synced_at, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
     )
     .bind(&id)
     .bind(name)
@@ -68,6 +75,7 @@ pub async fn insert_environment(
     .bind(default_branch)
     .bind(aliases)
     .bind(enabled)
+    .bind("pending")
     .bind(now)
     .bind(now)
     .execute(pool)
@@ -89,7 +97,7 @@ pub async fn update_environment(
 ) -> Result<Environment> {
     sqlx::query(
         "UPDATE environments
-         SET name = ?, slug = ?, git_ssh_url = ?, default_branch = ?, aliases = ?, enabled = ?, updated_at = ?
+         SET name = ?, slug = ?, git_ssh_url = ?, default_branch = ?, aliases = ?, enabled = ?, source_sync_status = ?, source_sync_error = NULL, source_synced_at = NULL, updated_at = ?
          WHERE id = ?",
     )
     .bind(name)
@@ -98,6 +106,7 @@ pub async fn update_environment(
     .bind(default_branch)
     .bind(aliases)
     .bind(enabled)
+    .bind("pending")
     .bind(Utc::now())
     .bind(id)
     .execute(pool)
@@ -108,6 +117,28 @@ pub async fn update_environment(
         .ok_or_else(|| anyhow::anyhow!("environment update missing row"))
 }
 
+pub async fn update_environment_source_status(
+    pool: &SqlitePool,
+    id: &str,
+    status: &str,
+    error: Option<&str>,
+    synced_at: Option<chrono::DateTime<Utc>>,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE environments
+         SET source_sync_status = ?, source_sync_error = ?, source_synced_at = ?, updated_at = ?
+         WHERE id = ?",
+    )
+    .bind(status)
+    .bind(error)
+    .bind(synced_at)
+    .bind(Utc::now())
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn delete_environment(pool: &SqlitePool, id: &str) -> Result<()> {
     sqlx::query("DELETE FROM environments WHERE id = ?")
         .bind(id)
@@ -116,20 +147,25 @@ pub async fn delete_environment(pool: &SqlitePool, id: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn count_sessions_for_environment(pool: &SqlitePool, environment_id: &str) -> Result<i64> {
-    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions WHERE environment_id = ?")
-        .bind(environment_id)
-        .fetch_one(pool)
-        .await?;
+pub async fn count_sessions_for_environment(
+    pool: &SqlitePool,
+    environment_id: &str,
+) -> Result<i64> {
+    let count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM sessions WHERE environment_id = ?")
+            .bind(environment_id)
+            .fetch_one(pool)
+            .await?;
     Ok(count)
 }
 
 pub async fn record_slack_event(pool: &SqlitePool, event_id: &str) -> Result<bool> {
-    let result = sqlx::query("INSERT OR IGNORE INTO slack_event_dedup (event_id, created_at) VALUES (?, ?)")
-        .bind(event_id)
-        .bind(Utc::now())
-        .execute(pool)
-        .await?;
+    let result =
+        sqlx::query("INSERT OR IGNORE INTO slack_event_dedup (event_id, created_at) VALUES (?, ?)")
+            .bind(event_id)
+            .bind(Utc::now())
+            .execute(pool)
+            .await?;
     Ok(result.rows_affected() == 1)
 }
 
@@ -186,10 +222,12 @@ pub async fn insert_session(
 }
 
 pub async fn get_session(pool: &SqlitePool, id: &str) -> Result<Option<Session>> {
-    Ok(sqlx::query_as::<_, Session>("SELECT * FROM sessions WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, Session>("SELECT * FROM sessions WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 pub async fn update_session_status(
@@ -198,13 +236,15 @@ pub async fn update_session_status(
     status: &str,
     current_workflow_id: Option<&str>,
 ) -> Result<()> {
-    sqlx::query("UPDATE sessions SET status = ?, current_workflow_id = ?, updated_at = ? WHERE id = ?")
-        .bind(status)
-        .bind(current_workflow_id)
-        .bind(Utc::now())
-        .bind(id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE sessions SET status = ?, current_workflow_id = ?, updated_at = ? WHERE id = ?",
+    )
+    .bind(status)
+    .bind(current_workflow_id)
+    .bind(Utc::now())
+    .bind(id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -242,10 +282,12 @@ pub async fn insert_task_run(
 }
 
 pub async fn get_task_run(pool: &SqlitePool, id: &str) -> Result<Option<TaskRun>> {
-    Ok(sqlx::query_as::<_, TaskRun>("SELECT * FROM task_runs WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, TaskRun>("SELECT * FROM task_runs WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 pub async fn list_recent_task_runs(pool: &SqlitePool, limit: i64) -> Result<Vec<TaskRun>> {
@@ -335,13 +377,18 @@ pub async fn insert_task_message(
 }
 
 pub async fn get_task_message(pool: &SqlitePool, id: &str) -> Result<Option<TaskMessage>> {
-    Ok(sqlx::query_as::<_, TaskMessage>("SELECT * FROM task_messages WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_as::<_, TaskMessage>("SELECT * FROM task_messages WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
-pub async fn get_task_messages_by_session(pool: &SqlitePool, session_id: &str) -> Result<Vec<TaskMessage>> {
+pub async fn get_task_messages_by_session(
+    pool: &SqlitePool,
+    session_id: &str,
+) -> Result<Vec<TaskMessage>> {
     Ok(sqlx::query_as::<_, TaskMessage>(
         "SELECT * FROM task_messages WHERE session_id = ? ORDER BY created_at ASC",
     )
@@ -350,7 +397,10 @@ pub async fn get_task_messages_by_session(pool: &SqlitePool, session_id: &str) -
     .await?)
 }
 
-pub async fn get_task_messages_by_run(pool: &SqlitePool, task_run_id: &str) -> Result<Vec<TaskMessage>> {
+pub async fn get_task_messages_by_run(
+    pool: &SqlitePool,
+    task_run_id: &str,
+) -> Result<Vec<TaskMessage>> {
     Ok(sqlx::query_as::<_, TaskMessage>(
         "SELECT * FROM task_messages WHERE task_run_id = ? ORDER BY created_at ASC",
     )
@@ -429,7 +479,10 @@ pub async fn insert_policy_violation(
     Ok(())
 }
 
-pub async fn count_recent_critical_violations(pool: &SqlitePool, slack_user_id: &str) -> Result<i64> {
+pub async fn count_recent_critical_violations(
+    pool: &SqlitePool,
+    slack_user_id: &str,
+) -> Result<i64> {
     let since = Utc::now() - Duration::hours(24);
     let count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM policy_violations WHERE slack_user_id = ? AND rule_type = 'critical_deny' AND created_at >= ?",
@@ -465,7 +518,10 @@ pub async fn get_active_ban(pool: &SqlitePool, slack_user_id: &str) -> Result<Op
     .await?)
 }
 
-pub async fn get_latest_run_for_session(pool: &SqlitePool, session_id: &str) -> Result<Option<TaskRun>> {
+pub async fn get_latest_run_for_session(
+    pool: &SqlitePool,
+    session_id: &str,
+) -> Result<Option<TaskRun>> {
     Ok(sqlx::query_as::<_, TaskRun>(
         "SELECT * FROM task_runs WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
     )
@@ -489,7 +545,10 @@ pub async fn get_task_run_with_session(
     }
 }
 
-pub async fn get_session_by_task_run(pool: &SqlitePool, task_run_id: &str) -> Result<Option<Session>> {
+pub async fn get_session_by_task_run(
+    pool: &SqlitePool,
+    task_run_id: &str,
+) -> Result<Option<Session>> {
     let maybe_run = get_task_run(pool, task_run_id).await?;
     if let Some(run) = maybe_run {
         get_session(pool, &run.session_id).await

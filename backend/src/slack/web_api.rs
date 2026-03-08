@@ -42,16 +42,25 @@ impl SlackWebClient {
     }
 
     pub async fn open_socket_connection(&self) -> Result<String> {
-        let response: SlackOpenConnectionResponse =
-            self.api_post_with_token("apps.connections.open", json!({}), true).await?;
+        let response: SlackOpenConnectionResponse = self
+            .api_post_with_token("apps.connections.open", json!({}), true)
+            .await?;
         if response.ok {
-            response.url.ok_or_else(|| anyhow!("missing socket mode URL"))
+            response
+                .url
+                .ok_or_else(|| anyhow!("missing socket mode URL"))
         } else {
-            Err(anyhow!(response.error.unwrap_or_else(|| "socket mode failed".to_string())))
+            Err(anyhow!(response
+                .error
+                .unwrap_or_else(|| "socket mode failed".to_string())))
         }
     }
 
-    pub async fn fetch_thread(&self, channel: &str, thread_ts: &str) -> Result<Vec<SlackReplyMessage>> {
+    pub async fn fetch_thread(
+        &self,
+        channel: &str,
+        thread_ts: &str,
+    ) -> Result<Vec<SlackReplyMessage>> {
         let response: SlackThreadResponse = self
             .api_get(
                 "conversations.replies",
@@ -61,7 +70,9 @@ impl SlackWebClient {
         if response.ok {
             Ok(response.messages.unwrap_or_default())
         } else {
-            Err(anyhow!(response.error.unwrap_or_else(|| "thread fetch failed".to_string())))
+            Err(anyhow!(response
+                .error
+                .unwrap_or_else(|| "thread fetch failed".to_string())))
         }
     }
 
@@ -82,7 +93,9 @@ impl SlackWebClient {
         if response.ok {
             Ok(())
         } else {
-            Err(anyhow!(response.error.unwrap_or_else(|| "post message failed".to_string())))
+            Err(anyhow!(response
+                .error
+                .unwrap_or_else(|| "post message failed".to_string())))
         }
     }
 
@@ -109,7 +122,11 @@ impl SlackWebClient {
             .context("failed to decode Slack response")
     }
 
-    async fn api_get<T: DeserializeOwned>(&self, method: &str, params: &[(&str, &str)]) -> Result<T> {
+    async fn api_get<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        params: &[(&str, &str)],
+    ) -> Result<T> {
         self.client
             .get(format!("https://slack.com/api/{method}"))
             .bearer_auth(&self.config.slack.bot_token)

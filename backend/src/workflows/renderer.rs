@@ -14,8 +14,7 @@ pub fn render_prompt(
     if let Some(workflow) = workflow {
         sections.push(format!(
             "Workflow: {}\nInstructions:\n{}\n",
-            workflow.metadata.name,
-            workflow.prompt
+            workflow.metadata.name, workflow.prompt
         ));
     }
 

@@ -45,7 +45,14 @@ impl Runner for CodexCliRunner {
             let mut sequence = 0_i64;
             let mut combined = String::new();
             while let Some(line) = reader.next_line().await? {
-                persist_chunk(&pool_stdout, &task_run_stdout, "stdout", &format!("{line}\n"), sequence).await?;
+                persist_chunk(
+                    &pool_stdout,
+                    &task_run_stdout,
+                    "stdout",
+                    &format!("{line}\n"),
+                    sequence,
+                )
+                .await?;
                 combined.push_str(&line);
                 combined.push('\n');
                 sequence += 1;
@@ -60,7 +67,14 @@ impl Runner for CodexCliRunner {
             let mut sequence = 0_i64;
             let mut combined = String::new();
             while let Some(line) = reader.next_line().await? {
-                persist_chunk(&pool_stderr, &task_run_stderr, "stderr", &format!("{line}\n"), sequence).await?;
+                persist_chunk(
+                    &pool_stderr,
+                    &task_run_stderr,
+                    "stderr",
+                    &format!("{line}\n"),
+                    sequence,
+                )
+                .await?;
                 combined.push_str(&line);
                 combined.push('\n');
                 sequence += 1;

@@ -23,7 +23,9 @@ pub struct DashboardResponse {
     pub recent_tasks: Vec<TaskRun>,
 }
 
-pub async fn list(State(state): State<Arc<AppState>>) -> Result<Json<DashboardResponse>, (StatusCode, String)> {
+pub async fn list(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<DashboardResponse>, (StatusCode, String)> {
     let environment_count = state.environments.count().await.map_err(internal_error)?;
     let recent_tasks = queries::list_recent_task_runs(&state.db, 25)
         .await
@@ -54,7 +56,8 @@ pub async fn messages(
     let maybe_session = queries::get_session_by_task_run(&state.db, &id)
         .await
         .map_err(internal_error)?;
-    let session = maybe_session.ok_or_else(|| (StatusCode::NOT_FOUND, "task not found".to_string()))?;
+    let session =
+        maybe_session.ok_or_else(|| (StatusCode::NOT_FOUND, "task not found".to_string()))?;
     queries::get_task_messages_by_session(&state.db, &session.id)
         .await
         .map(Json)

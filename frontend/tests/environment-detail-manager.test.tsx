@@ -43,6 +43,9 @@ describe("EnvironmentDetailManager", () => {
             default_branch: "master",
             aliases: JSON.stringify(["newton", "web"]),
             enabled: true,
+            source_sync_status: "syncing",
+            source_sync_error: null,
+            source_synced_at: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
@@ -55,6 +58,8 @@ describe("EnvironmentDetailManager", () => {
     expect(screen.getByRole("heading", { name: /Edit Environment/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save Changes" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete Permanently" })).toBeInTheDocument();
+    expect(screen.getByText(/Source sync status:/i)).toBeInTheDocument();
+    expect(screen.getByText("Syncing")).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Delete Permanently" })[0]);
     expect(screen.getByRole("heading", { name: "Delete Environment" })).toBeInTheDocument();

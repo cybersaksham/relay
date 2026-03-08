@@ -1,0 +1,12 @@
+# System
+.DS_Store
+
+# Root Env
+.env
+.env.*
+!.env.example
+.env.local
+
+# Service Envs
+backend/.env
+frontend/.env

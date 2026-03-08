@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BACKEND_DIR="$ROOT_DIR/backend"
+FRONTEND_DIR="$ROOT_DIR/frontend"
+BACKEND_ENV_FILE="$BACKEND_DIR/.env"
+FRONTEND_ENV_FILE="$FRONTEND_DIR/.env"
+
+backend_pid=""
+frontend_pid=""
+backend_port=""
+frontend_port=""
+
+log() {
+  printf '[run_server] %s\n' "$1"
+}
+
+require_file() {
+  local file_path="$1"
+  if [[ ! -f "$file_path" ]]; then
+    printf 'Missing required env file: %s\n' "$file_path" >&2
+    exit 1
+  fi
+}
+
+read_env_value() {
+  local file_path="$1"
+  local key="$2"
+  awk -F= -v key="$key" '
+    $1 == key {
+      sub(/^[[:space:]]+/, "", $2)
+      sub(/[[:space:]]+$/, "", $2)
+      print $2
+      exit
+    }
+  ' "$file_path"
+}
+
+ensure_port_free() {
+  local port="$1"
+  local owner
+  owner="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "$owner" ]]; then
+    printf 'Port %s is already in use by PID(s): %s\n' "$port" "$owner" >&2
+    exit 1
+  fi
+}
+
+kill_listeners_on_port() {
+  local port="$1"
+  local pids
+  pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  if [[ -n "$pids" ]]; then
+    kill $pids 2>/dev/null || true
+    sleep 1
+    pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+    if [[ -n "$pids" ]]; then
+      kill -9 $pids 2>/dev/null || true
+    fi
+  fi
+}
+
+stop_pid() {
+  local pid="$1"
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+}
+
+cleanup() {
+  local exit_code=$?
+  log "stopping services"
+  stop_pid "$backend_pid"
+  stop_pid "$frontend_pid"
+
+  if [[ -n "$backend_port" ]]; then
+    kill_listeners_on_port "$backend_port"
+  fi
+
+  if [[ -n "$frontend_port" ]]; then
+    kill_listeners_on_port "$frontend_port"
+  fi
+
+  exit "$exit_code"
+}
+
+trap cleanup EXIT INT TERM
+
+require_file "$BACKEND_ENV_FILE"
+require_file "$FRONTEND_ENV_FILE"
+
+backend_port="$(read_env_value "$BACKEND_ENV_FILE" "APP_PORT")"
+frontend_port="$(read_env_value "$FRONTEND_ENV_FILE" "PORT")"
+
+if [[ -z "$backend_port" ]]; then
+  printf 'APP_PORT must be set in %s\n' "$BACKEND_ENV_FILE" >&2
+  exit 1
+fi
+
+if [[ -z "$frontend_port" ]]; then
+  printf 'PORT must be set in %s\n' "$FRONTEND_ENV_FILE" >&2
+  exit 1
+fi
+
+ensure_port_free "$backend_port"
+ensure_port_free "$frontend_port"
+
+log "starting backend on port $backend_port"
+(
+  cd "$BACKEND_DIR"
+  set -a
+  source "$BACKEND_ENV_FILE"
+  set +a
+  cargo run
+) &
+backend_pid=$!
+
+log "starting frontend on port $frontend_port"
+(
+  cd "$FRONTEND_DIR"
+  set -a
+  source "$FRONTEND_ENV_FILE"
+  set +a
+  npm run dev
+) &
+frontend_pid=$!
+
+log "backend pid: $backend_pid"
+log "frontend pid: $frontend_pid"
+
+while true; do
+  if ! kill -0 "$backend_pid" 2>/dev/null; then
+    wait "$backend_pid" 2>/dev/null || true
+    break
+  fi
+
+  if ! kill -0 "$frontend_pid" 2>/dev/null; then
+    wait "$frontend_pid" 2>/dev/null || true
+    break
+  fi
+
+  sleep 1
+done

@@ -1,0 +1,11 @@
+# Env
+.env
+
+# Build
+target/
+
+# Database
+relay.db
+
+# SQLx
+.sqlx/

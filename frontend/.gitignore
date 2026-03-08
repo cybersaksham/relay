@@ -1,0 +1,13 @@
+# Env
+.env
+.env.local
+
+# Build
+.next/
+
+# Dependencies
+node_modules/
+
+# Test Output
+coverage/
+test-results/

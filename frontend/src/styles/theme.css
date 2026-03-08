@@ -1,0 +1,6 @@
+.panel-grid {
+  background-image:
+    linear-gradient(to right, rgba(19, 34, 56, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(19, 34, 56, 0.04) 1px, transparent 1px);
+  background-size: 16px 16px;
+}

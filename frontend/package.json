@@ -1,0 +1,31 @@
+{
+  "name": "relay-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "sh -c 'test -n \"$PORT\" && next dev --port \"$PORT\"'",
+    "build": "next build",
+    "start": "sh -c 'test -n \"$PORT\" && next start --port \"$PORT\"'",
+    "lint": "next lint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "next": "^15.3.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.13.14",
+    "@types/react": "^19.0.11",
+    "@types/react-dom": "^19.0.4",
+    "autoprefixer": "^10.4.20",
+    "jsdom": "^26.0.0",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.2",
+    "vitest": "^3.1.1"
+  }
+}

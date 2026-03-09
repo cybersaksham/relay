@@ -73,6 +73,18 @@ pub async fn handle_slack_envelope(
     begin_processing_reaction(&state, &channel_id, &trigger_message_ts).await;
 
     let outcome = async {
+        if !state.policies.is_master(&user_id) {
+            state
+                .slack
+                .post_message(
+                    &channel_id,
+                    &thread_ts,
+                    "You are not allowed to use this bot.",
+                )
+                .await?;
+            return Ok(RequestOutcome::Rejected);
+        }
+
         let messages = state.slack.fetch_thread(&channel_id, &thread_ts).await?;
         let thread = normalize_thread(&channel_id, &thread_ts, messages)?;
         let request_text = resolve_slack_text(&text);

@@ -84,4 +84,9 @@ impl WorkflowRegistry {
     pub fn get(&self, id: &str) -> Option<WorkflowDefinition> {
         self.workflows.get(id).cloned()
     }
+
+    #[cfg(test)]
+    pub fn from_workflows(workflows: HashMap<String, WorkflowDefinition>) -> Self {
+        Self { workflows }
+    }
 }

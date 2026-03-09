@@ -33,7 +33,7 @@ pub fn match_workflow(
         }
 
         for phrase in &workflow.metadata.trigger_phrases {
-            if prompt_lower.contains(&phrase.to_lowercase()) {
+            if phrase_matches(&prompt_lower, phrase) {
                 score += 3;
             }
         }
@@ -57,4 +57,38 @@ pub fn match_workflow(
         [(score_a, workflow_a), (score_b, _)] if score_a > score_b => Some(workflow_a.clone()),
         _ => None,
     }
+}
+
+fn phrase_matches(prompt_lower: &str, phrase: &str) -> bool {
+    let phrase_lower = phrase.to_lowercase();
+    if prompt_lower.contains(&phrase_lower) {
+        return true;
+    }
+
+    let prompt_tokens: Vec<&str> = prompt_lower
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect();
+    let phrase_tokens: Vec<&str> = phrase_lower
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect();
+
+    if phrase_tokens.is_empty() {
+        return false;
+    }
+
+    let mut search_index = 0;
+    for phrase_token in phrase_tokens {
+        if let Some(position) = prompt_tokens[search_index..]
+            .iter()
+            .position(|prompt_token| prompt_token == &phrase_token)
+        {
+            search_index += position + 1;
+        } else {
+            return false;
+        }
+    }
+
+    true
 }

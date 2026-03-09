@@ -42,3 +42,16 @@ fn picks_environment_workflow_when_trigger_matches() {
         match_workflow(&registry, "please review pr 42", None).expect("workflow should match");
     assert_eq!(workflow.metadata.id, "pr-review");
 }
+
+#[test]
+fn matches_pr_review_workflow_with_filler_words() {
+    let registry = WorkflowRegistry::load(std::path::Path::new("../.workflows"))
+        .expect("workflow registry should load");
+    let workflow = match_workflow(
+        &registry,
+        "Please review this PR https://github.com/example/repo/pull/42",
+        None,
+    )
+    .expect("workflow should match with natural phrasing");
+    assert_eq!(workflow.metadata.id, "pr-review");
+}

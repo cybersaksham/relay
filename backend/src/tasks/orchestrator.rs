@@ -13,7 +13,7 @@ use crate::slack::formatter::{resolve_slack_text, resolved_payload_json};
 use crate::slack::thread_context::normalize_thread;
 use crate::slack::SlackEventEnvelope;
 use crate::tasks::reply_service::persist_and_send_reply;
-use crate::workflows::{matcher, renderer};
+use crate::workflows::{matcher, renderer, selector};
 
 pub async fn handle_slack_envelope(
     state: Arc<AppState>,
@@ -127,7 +127,15 @@ pub async fn handle_slack_envelope(
                 return Ok(());
             }
         };
-    let workflow = matcher::match_workflow(&state.workflows, &request_text, environment.as_ref());
+    let workflow = selector::select_workflow(
+        &state.config,
+        &state.workflows,
+        &request_text,
+        &thread,
+        environment.as_ref(),
+    )
+    .await
+    .or_else(|| matcher::match_workflow(&state.workflows, &request_text, environment.as_ref()));
 
     let session = match existing_session {
         Some(session) => {

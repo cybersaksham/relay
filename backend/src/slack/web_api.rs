@@ -33,6 +33,12 @@ struct SlackPostMessageResponse {
     error: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct SlackBasicResponse {
+    ok: bool,
+    error: Option<String>,
+}
+
 impl SlackWebClient {
     pub fn new(config: SharedConfig) -> Self {
         Self {
@@ -96,6 +102,66 @@ impl SlackWebClient {
             Err(anyhow!(response
                 .error
                 .unwrap_or_else(|| "post message failed".to_string())))
+        }
+    }
+
+    pub async fn add_reaction(&self, channel: &str, timestamp: &str, name: &str) -> Result<()> {
+        match self.add_reaction_name(channel, timestamp, name).await {
+            Ok(()) => Ok(()),
+            Err(error) if name == "white-tick" && error.to_string() == "invalid_name" => {
+                self.add_reaction_name(channel, timestamp, "white_check_mark")
+                    .await
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub async fn remove_reaction(&self, channel: &str, timestamp: &str, name: &str) -> Result<()> {
+        let response: SlackBasicResponse = self
+            .api_post_with_token(
+                "reactions.remove",
+                json!({
+                    "channel": channel,
+                    "timestamp": timestamp,
+                    "name": name
+                }),
+                false,
+            )
+            .await?;
+
+        if response.ok {
+            return Ok(());
+        }
+
+        let error = response
+            .error
+            .unwrap_or_else(|| "reaction remove failed".to_string());
+        if error == "no_reaction" {
+            return Ok(());
+        }
+
+        Err(anyhow!(error))
+    }
+
+    async fn add_reaction_name(&self, channel: &str, timestamp: &str, name: &str) -> Result<()> {
+        let response: SlackBasicResponse = self
+            .api_post_with_token(
+                "reactions.add",
+                json!({
+                    "channel": channel,
+                    "timestamp": timestamp,
+                    "name": name
+                }),
+                false,
+            )
+            .await?;
+
+        if response.ok {
+            Ok(())
+        } else {
+            Err(anyhow!(response
+                .error
+                .unwrap_or_else(|| "reaction add failed".to_string())))
         }
     }
 

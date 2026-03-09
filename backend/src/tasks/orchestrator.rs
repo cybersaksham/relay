@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use serde_json::json;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::app_state::AppState;
 use crate::db::models::{Environment, Session};
@@ -60,225 +60,250 @@ pub async fn handle_slack_envelope(
         return Ok(());
     }
 
-    let messages = state.slack.fetch_thread(&channel_id, &thread_ts).await?;
-    let thread = normalize_thread(&channel_id, &thread_ts, messages)?;
-    let request_text = resolve_slack_text(&text);
+    begin_processing_reaction(&state, &channel_id, &trigger_message_ts).await;
 
-    match state.policies.evaluate(&user_id, &request_text) {
-        PolicyDecision::Allowed => {}
-        PolicyDecision::NonMasterDenied(rule) => {
-            state
-                .slack
-                .post_message(
-                    &channel_id,
-                    &thread_ts,
-                    &format!(
-                        "Request denied. Non-master users can only ask for approved tasks. Policy: {}.",
-                        rule.title
-                    ),
-                )
-                .await?;
-            return Ok(());
-        }
-        PolicyDecision::CriticalDenied(rule) => {
-            queries::insert_policy_violation(
-                &state.db,
-                &user_id,
-                &team_id,
-                &channel_id,
-                &thread_ts,
-                "critical_deny",
-                &rule.id,
-                &request_text.chars().take(500).collect::<String>(),
-            )
-            .await?;
-            let count = queries::count_recent_critical_violations(&state.db, &user_id).await?;
-            if count >= 2 {
-                queries::insert_ban(&state.db, &user_id, "Repeated critical deny requests").await?;
-            }
-            state
-                .slack
-                .post_message(
-                    &channel_id,
-                    &thread_ts,
-                    &format!(
-                        "Request denied. This falls under the critical deny policy: {}.",
-                        rule.title
-                    ),
-                )
-                .await?;
-            return Ok(());
-        }
-    }
+    let outcome = async {
+        let messages = state.slack.fetch_thread(&channel_id, &thread_ts).await?;
+        let thread = normalize_thread(&channel_id, &thread_ts, messages)?;
+        let request_text = resolve_slack_text(&text);
 
-    let existing_session = state
-        .sessions
-        .find_by_thread(&team_id, &channel_id, &thread_ts)
-        .await?;
-
-    let environment =
-        match resolve_environment(&state, existing_session.as_ref(), &request_text).await {
-            Ok(environment) => environment,
-            Err(error) => {
+        match state.policies.evaluate(&user_id, &request_text) {
+            PolicyDecision::Allowed => {}
+            PolicyDecision::NonMasterDenied(rule) => {
                 state
                     .slack
-                    .post_message(&channel_id, &thread_ts, &error.to_string())
-                    .await?;
-                return Ok(());
-            }
-        };
-    let workflow = selector::select_workflow(
-        &state.config,
-        &state.workflows,
-        &request_text,
-        &thread,
-        environment.as_ref(),
-    )
-    .await
-    .or_else(|| matcher::match_workflow(&state.workflows, &request_text, environment.as_ref()));
-
-    let session = match existing_session {
-        Some(session) => {
-            enforce_environment_binding(&session, environment.as_ref())?;
-            session
-        }
-        None => {
-            let prepared = if let Some(environment) = environment.as_ref() {
-                let source_path = state
-                    .workspaces
-                    .ensure_source_clone(
-                        &environment.slug,
-                        &environment.git_ssh_url,
-                        &environment.default_branch,
+                    .post_message(
+                        &channel_id,
+                        &thread_ts,
+                        &format!(
+                            "Request denied. Non-master users can only ask for approved tasks. Policy: {}.",
+                            rule.title
+                        ),
                     )
                     .await?;
-                state
-                    .workspaces
-                    .prepare_repo_workspace(&environment.slug, &source_path, None)
-                    .await?
-            } else {
-                state.workspaces.prepare_general_workspace(None).await?
-            };
-
-            state
-                .sessions
-                .create(
+                return Ok(RequestOutcome::Rejected);
+            }
+            PolicyDecision::CriticalDenied(rule) => {
+                queries::insert_policy_violation(
+                    &state.db,
+                    &user_id,
                     &team_id,
                     &channel_id,
                     &thread_ts,
-                    &prepared.workspace_id,
-                    &prepared.workspace_path.display().to_string(),
-                    environment.as_ref().map(|item| item.id.as_str()),
-                    workflow.as_ref().map(|item| item.metadata.id.as_str()),
-                    "idle",
+                    "critical_deny",
+                    &rule.id,
+                    &request_text.chars().take(500).collect::<String>(),
                 )
-                .await?
+                .await?;
+                let count = queries::count_recent_critical_violations(&state.db, &user_id).await?;
+                if count >= 2 {
+                    queries::insert_ban(&state.db, &user_id, "Repeated critical deny requests").await?;
+                }
+                state
+                    .slack
+                    .post_message(
+                        &channel_id,
+                        &thread_ts,
+                        &format!(
+                            "Request denied. This falls under the critical deny policy: {}.",
+                            rule.title
+                        ),
+                    )
+                    .await?;
+                return Ok(RequestOutcome::Rejected);
+            }
         }
-    };
 
-    if state.sessions.has_active_run(&session.id).await? {
+        let existing_session = state
+            .sessions
+            .find_by_thread(&team_id, &channel_id, &thread_ts)
+            .await?;
+
+        let environment =
+            match resolve_environment(&state, existing_session.as_ref(), &request_text).await {
+                Ok(environment) => environment,
+                Err(error) => {
+                    state
+                        .slack
+                        .post_message(&channel_id, &thread_ts, &error.to_string())
+                        .await?;
+                    return Ok(RequestOutcome::Rejected);
+                }
+            };
+        let workflow = selector::select_workflow(
+            &state.config,
+            &state.workflows,
+            &request_text,
+            &thread,
+            environment.as_ref(),
+        )
+        .await
+        .or_else(|| matcher::match_workflow(&state.workflows, &request_text, environment.as_ref()));
+
+        let session = match existing_session {
+            Some(session) => {
+                enforce_environment_binding(&session, environment.as_ref())?;
+                session
+            }
+            None => {
+                let prepared = if let Some(environment) = environment.as_ref() {
+                    let source_path = state
+                        .workspaces
+                        .ensure_source_clone(
+                            &environment.slug,
+                            &environment.git_ssh_url,
+                            &environment.default_branch,
+                        )
+                        .await?;
+                    state
+                        .workspaces
+                        .prepare_repo_workspace(&environment.slug, &source_path, None)
+                        .await?
+                } else {
+                    state.workspaces.prepare_general_workspace(None).await?
+                };
+
+                state
+                    .sessions
+                    .create(
+                        &team_id,
+                        &channel_id,
+                        &thread_ts,
+                        &prepared.workspace_id,
+                        &prepared.workspace_path.display().to_string(),
+                        environment.as_ref().map(|item| item.id.as_str()),
+                        workflow.as_ref().map(|item| item.metadata.id.as_str()),
+                        "idle",
+                    )
+                    .await?
+            }
+        };
+
+        if state.sessions.has_active_run(&session.id).await? {
+            persist_and_send_reply(
+                &state,
+                &session.id,
+                None,
+                &channel_id,
+                &thread_ts,
+                "This thread already has an active task run. Wait for it to finish before sending another request.",
+            )
+            .await?;
+            return Ok(RequestOutcome::Rejected);
+        }
+
+        state
+            .sessions
+            .update_status(
+                &session.id,
+                "running",
+                workflow.as_ref().map(|item| item.metadata.id.as_str()),
+            )
+            .await?;
+        let task_run = queries::insert_task_run(
+            &state.db,
+            &session.id,
+            &trigger_message_ts,
+            workflow.as_ref().map(|item| item.metadata.id.as_str()),
+            workflow.as_ref().map(|item| item.metadata.name.as_str()),
+            state.runner.kind(),
+            "running",
+        )
+        .await?;
+
+        let raw_inbound = json!({
+            "text": text,
+            "user_id": user_id,
+            "channel_id": channel_id,
+            "thread_ts": thread_ts,
+        })
+        .to_string();
+        queries::insert_task_message(
+            &state.db,
+            &session.id,
+            Some(&task_run.id),
+            "inbound",
+            Some(&user_id),
+            &raw_inbound,
+            &resolved_payload_json(&request_text),
+        )
+        .await?;
+
+        let prompt = renderer::render_prompt(
+            workflow.as_ref(),
+            environment.as_ref(),
+            &thread,
+            &session.workspace_path,
+        );
+
+        let output = state
+            .runner
+            .run(RunnerInput {
+                task_run_id: task_run.id.clone(),
+                workspace_path: session.workspace_path.clone(),
+                prompt,
+            })
+            .await?;
+
+        let reply_text = if output.status == "succeeded" && !output.stdout.trim().is_empty() {
+            output.stdout.trim().to_string()
+        } else if !output.stderr.trim().is_empty() {
+            format!("Task failed.\n{}", output.stderr.trim())
+        } else {
+            format!("Task finished with status {}", output.status)
+        };
+
+        queries::update_task_run_status(
+            &state.db,
+            &task_run.id,
+            &output.status,
+            output.exit_code,
+            (!output.stderr.trim().is_empty()).then_some(output.stderr.trim()),
+        )
+        .await?;
+        state
+            .sessions
+            .update_status(
+                &session.id,
+                "idle",
+                workflow.as_ref().map(|item| item.metadata.id.as_str()),
+            )
+            .await?;
+
         persist_and_send_reply(
             &state,
             &session.id,
-            None,
+            Some(&task_run.id),
             &channel_id,
             &thread_ts,
-            "This thread already has an active task run. Wait for it to finish before sending another request.",
+            &reply_text,
         )
         .await?;
-        return Ok(());
+
+        info!(task_run_id = %task_run.id, "completed task run");
+        Ok(RequestOutcome::Completed)
     }
+    .await;
 
-    state
-        .sessions
-        .update_status(
-            &session.id,
-            "running",
-            workflow.as_ref().map(|item| item.metadata.id.as_str()),
-        )
-        .await?;
-    let task_run = queries::insert_task_run(
-        &state.db,
-        &session.id,
-        &trigger_message_ts,
-        workflow.as_ref().map(|item| item.metadata.id.as_str()),
-        workflow.as_ref().map(|item| item.metadata.name.as_str()),
-        state.runner.kind(),
-        "running",
-    )
-    .await?;
+    match outcome {
+        Ok(RequestOutcome::Completed) => {
+            finish_processing_reaction(&state, &channel_id, &trigger_message_ts, true).await;
+            Ok(())
+        }
+        Ok(RequestOutcome::Rejected) => {
+            finish_processing_reaction(&state, &channel_id, &trigger_message_ts, false).await;
+            Ok(())
+        }
+        Err(error) => {
+            finish_processing_reaction(&state, &channel_id, &trigger_message_ts, false).await;
+            Err(error)
+        }
+    }
+}
 
-    let raw_inbound = json!({
-        "text": text,
-        "user_id": user_id,
-        "channel_id": channel_id,
-        "thread_ts": thread_ts,
-    })
-    .to_string();
-    queries::insert_task_message(
-        &state.db,
-        &session.id,
-        Some(&task_run.id),
-        "inbound",
-        Some(&user_id),
-        &raw_inbound,
-        &resolved_payload_json(&request_text),
-    )
-    .await?;
-
-    let prompt = renderer::render_prompt(
-        workflow.as_ref(),
-        environment.as_ref(),
-        &thread,
-        &session.workspace_path,
-    );
-
-    let output = state
-        .runner
-        .run(RunnerInput {
-            task_run_id: task_run.id.clone(),
-            workspace_path: session.workspace_path.clone(),
-            prompt,
-        })
-        .await?;
-
-    let reply_text = if output.status == "succeeded" && !output.stdout.trim().is_empty() {
-        output.stdout.trim().to_string()
-    } else if !output.stderr.trim().is_empty() {
-        format!("Task failed.\n{}", output.stderr.trim())
-    } else {
-        format!("Task finished with status {}", output.status)
-    };
-
-    queries::update_task_run_status(
-        &state.db,
-        &task_run.id,
-        &output.status,
-        output.exit_code,
-        (!output.stderr.trim().is_empty()).then_some(output.stderr.trim()),
-    )
-    .await?;
-    state
-        .sessions
-        .update_status(
-            &session.id,
-            "idle",
-            workflow.as_ref().map(|item| item.metadata.id.as_str()),
-        )
-        .await?;
-
-    persist_and_send_reply(
-        &state,
-        &session.id,
-        Some(&task_run.id),
-        &channel_id,
-        &thread_ts,
-        &reply_text,
-    )
-    .await?;
-
-    info!(task_run_id = %task_run.id, "completed task run");
-    Ok(())
+enum RequestOutcome {
+    Completed,
+    Rejected,
 }
 
 fn enforce_environment_binding(
@@ -334,6 +359,49 @@ async fn resolve_environment(
     }
 
     Ok(None)
+}
+
+async fn begin_processing_reaction(state: &AppState, channel_id: &str, message_ts: &str) {
+    if let Err(error) = state
+        .slack
+        .add_reaction(channel_id, message_ts, "eyes")
+        .await
+    {
+        warn!(
+            ?error,
+            channel_id, message_ts, "failed to add eyes reaction"
+        );
+    }
+}
+
+async fn finish_processing_reaction(
+    state: &AppState,
+    channel_id: &str,
+    message_ts: &str,
+    success: bool,
+) {
+    if let Err(error) = state
+        .slack
+        .remove_reaction(channel_id, message_ts, "eyes")
+        .await
+    {
+        warn!(
+            ?error,
+            channel_id, message_ts, "failed to remove eyes reaction"
+        );
+    }
+
+    let final_reaction = if success { "white-tick" } else { "x" };
+    if let Err(error) = state
+        .slack
+        .add_reaction(channel_id, message_ts, final_reaction)
+        .await
+    {
+        warn!(
+            ?error,
+            channel_id, message_ts, final_reaction, "failed to add final request reaction"
+        );
+    }
 }
 
 #[cfg(test)]

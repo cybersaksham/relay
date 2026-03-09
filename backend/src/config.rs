@@ -21,6 +21,7 @@ pub struct ServerConfig {
     pub host: String,
     pub port: u16,
     pub base_url: String,
+    pub portal_base_url: String,
     pub rust_log: String,
 }
 
@@ -78,6 +79,11 @@ impl Config {
             env_path("RELAY_POLICIES_DIR").unwrap_or_else(|| current_dir.join("../.policies"));
         let workflows_dir =
             env_path("RELAY_WORKFLOWS_DIR").unwrap_or_else(|| current_dir.join("../.workflows"));
+        let app_base_url = required_env("APP_BASE_URL")?;
+        let portal_base_url = env::var("PORTAL_BASE_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| app_base_url.clone());
 
         Ok(Self {
             server: ServerConfig {
@@ -85,7 +91,8 @@ impl Config {
                 port: required_env("APP_PORT")?
                     .parse()
                     .context("APP_PORT must be a valid u16")?,
-                base_url: required_env("APP_BASE_URL")?,
+                base_url: app_base_url,
+                portal_base_url,
                 rust_log: env_or("RUST_LOG", "relay_backend=debug,tower_http=info"),
             },
             database: DatabaseConfig {

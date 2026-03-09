@@ -266,6 +266,22 @@ pub async fn handle_slack_envelope(
         )
         .await?;
 
+        let kickoff_message = build_task_kickoff_message(
+            &state.config,
+            &session,
+            environment.as_ref(),
+            workflow.as_ref(),
+        );
+        persist_and_send_reply(
+            &state,
+            &session.id,
+            Some(&task_run.id),
+            &channel_id,
+            &thread_ts,
+            &kickoff_message,
+        )
+        .await?;
+
         if let Some(workspace_setup_script) = workspace_setup_script_to_run.as_deref() {
             let hook_result = state
                 .workspaces
@@ -692,6 +708,28 @@ async fn persist_workspace_hook_terminal_output(
     }
 
     Ok(())
+}
+
+fn build_task_kickoff_message(
+    config: &SharedConfig,
+    session: &Session,
+    environment: Option<&Environment>,
+    workflow: Option<&WorkflowDefinition>,
+) -> String {
+    let environment_label = environment
+        .map(|item| item.name.as_str())
+        .unwrap_or("general");
+    let workflow_label = workflow
+        .map(|item| item.metadata.name.as_str())
+        .unwrap_or("Generic run");
+    let task_url = format!(
+        "{}/tasks/{}",
+        config.server.portal_base_url.trim_end_matches('/'),
+        session.id
+    );
+    format!(
+        "Kicked off the task in environment `{environment_label}` using workflow `{workflow_label}`.\nOpen task: {task_url}"
+    )
 }
 
 fn build_reply_text(output: &RunnerOutput) -> String {

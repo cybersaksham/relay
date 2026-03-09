@@ -1,18 +1,39 @@
 import React from "react";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { ChatTranscript } from "@/components/chat-transcript";
+import { ThreadConversation } from "@/components/thread-conversation";
 
-describe("ChatTranscript", () => {
-  it("renders resolved message text", () => {
+vi.mock("@/components/terminal-stream", () => ({
+  TerminalStream: ({ title }: { title: string }) => <div>{title}</div>,
+}));
+
+describe("ThreadConversation", () => {
+  it("renders resolved message text with per-run processing section", () => {
     render(
-      <ChatTranscript
+      <ThreadConversation
+        runs={[
+          {
+            id: "run-1",
+            session_id: "session",
+            trigger_message_ts: "123.456",
+            status: "succeeded",
+            workflow_id: null,
+            workflow_name: "Generic run",
+            runner_kind: "codex_cli",
+            started_at: new Date().toISOString(),
+            finished_at: new Date().toISOString(),
+            exit_code: 0,
+            error_summary: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ]}
         messages={[
           {
             id: "1",
             session_id: "session",
-            task_run_id: "task",
+            task_run_id: "run-1",
             direction: "inbound",
             slack_user_id: "U123",
             raw_payload: "{}",
@@ -24,5 +45,6 @@ describe("ChatTranscript", () => {
     );
 
     expect(screen.getByText("hello relay")).toBeInTheDocument();
+    expect(screen.getByText("Processing")).toBeInTheDocument();
   });
 });

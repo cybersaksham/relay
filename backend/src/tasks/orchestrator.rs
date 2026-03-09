@@ -181,24 +181,6 @@ pub async fn handle_slack_envelope(
         return Ok(());
     }
 
-    let raw_inbound = json!({
-        "text": text,
-        "user_id": user_id,
-        "channel_id": channel_id,
-        "thread_ts": thread_ts,
-    })
-    .to_string();
-    queries::insert_task_message(
-        &state.db,
-        &session.id,
-        None,
-        "inbound",
-        Some(&user_id),
-        &raw_inbound,
-        &resolved_payload_json(&request_text),
-    )
-    .await?;
-
     state
         .sessions
         .update_status(
@@ -215,6 +197,24 @@ pub async fn handle_slack_envelope(
         workflow.as_ref().map(|item| item.metadata.name.as_str()),
         state.runner.kind(),
         "running",
+    )
+    .await?;
+
+    let raw_inbound = json!({
+        "text": text,
+        "user_id": user_id,
+        "channel_id": channel_id,
+        "thread_ts": thread_ts,
+    })
+    .to_string();
+    queries::insert_task_message(
+        &state.db,
+        &session.id,
+        Some(&task_run.id),
+        "inbound",
+        Some(&user_id),
+        &raw_inbound,
+        &resolved_payload_json(&request_text),
     )
     .await?;
 

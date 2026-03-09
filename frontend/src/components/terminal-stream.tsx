@@ -9,9 +9,15 @@ import { TerminalEvent } from "@/lib/types";
 export function TerminalStream({
   taskId,
   initialEvents = [],
+  title = "Live Terminal",
+  emptyCopy = "Waiting for terminal output...",
+  maxHeightClass = "max-h-[520px]",
 }: {
   taskId: string;
   initialEvents?: TerminalEvent[];
+  title?: string;
+  emptyCopy?: string;
+  maxHeightClass?: string;
 }) {
   const [events, setEvents] = useState<TerminalEvent[]>(initialEvents);
 
@@ -47,11 +53,13 @@ export function TerminalStream({
   return (
     <section className="surface overflow-hidden">
       <div className="surface-header">
-        <h2 className="text-lg font-semibold text-ink">Live Terminal</h2>
+        <h2 className="text-lg font-semibold text-ink">{title}</h2>
       </div>
       <div className="surface-body">
-        <pre className="max-h-[520px] overflow-auto rounded-lg bg-slate-950 p-4 whitespace-pre-wrap font-mono text-xs leading-6 text-emerald-200">
-          {terminalText || "Waiting for terminal output..."}
+        <pre
+          className={`${maxHeightClass} overflow-auto rounded-lg bg-slate-950 p-4 whitespace-pre-wrap font-mono text-xs leading-6 text-emerald-200`}
+        >
+          {terminalText || emptyCopy}
         </pre>
       </div>
     </section>

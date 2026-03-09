@@ -3,6 +3,7 @@ use std::process::Stdio;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use sqlx::SqlitePool;
+use tokio::fs;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
@@ -26,11 +27,22 @@ impl CodexCliRunner {
 #[async_trait]
 impl Runner for CodexCliRunner {
     async fn run(&self, input: RunnerInput) -> Result<RunnerOutput> {
+        let output_last_message_path = format!(
+            "{}/.relay-codex-last-message-{}.txt",
+            input.workspace_path, input.task_run_id
+        );
         let mut command = Command::new(&self.config.codex.bin);
         command
+            .arg("exec")
+            .arg("--skip-git-repo-check")
+            .arg("--color")
+            .arg("never")
+            .arg("-o")
+            .arg(&output_last_message_path)
             .args(&self.config.codex.default_args)
             .arg(&input.prompt)
             .current_dir(&input.workspace_path)
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
@@ -91,9 +103,10 @@ impl Runner for CodexCliRunner {
         match status {
             Ok(wait_result) => {
                 let wait_status = wait_result?;
-                let stdout = stdout_handle.await??;
+                let combined_stdout = stdout_handle.await??;
                 let stderr = stderr_handle.await??;
                 let success = wait_status.success();
+                let stdout = read_last_message(&output_last_message_path, &combined_stdout).await;
                 Ok(RunnerOutput {
                     status: if success { "succeeded" } else { "failed" }.to_string(),
                     exit_code: wait_status.code().map(i64::from),
@@ -103,8 +116,9 @@ impl Runner for CodexCliRunner {
             }
             Err(_) => {
                 let _ = child.kill().await;
-                let stdout = stdout_handle.await??;
+                let combined_stdout = stdout_handle.await??;
                 let stderr = stderr_handle.await??;
+                let stdout = read_last_message(&output_last_message_path, &combined_stdout).await;
                 Ok(RunnerOutput {
                     status: "timed_out".to_string(),
                     exit_code: None,
@@ -117,5 +131,15 @@ impl Runner for CodexCliRunner {
 
     fn kind(&self) -> &'static str {
         "codex_cli"
+    }
+}
+
+async fn read_last_message(path: &str, fallback: &str) -> String {
+    match fs::read_to_string(path).await {
+        Ok(content) if !content.trim().is_empty() => {
+            let _ = fs::remove_file(path).await;
+            content
+        }
+        _ => fallback.to_string(),
     }
 }

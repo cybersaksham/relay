@@ -13,6 +13,7 @@ import {
   EnvironmentForm,
   environmentToFormValues,
 } from "@/components/environment-form";
+import { EnvironmentSyncTerminal } from "@/components/environment-sync-terminal";
 import { TaskList } from "@/components/task-list";
 
 function sourceStatusCopy(status: string) {
@@ -43,6 +44,7 @@ export function EnvironmentDetailManager({
   const [refreshPending, setRefreshPending] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshSuccess, setRefreshSuccess] = useState<string | null>(null);
+  const [showSyncTerminal, setShowSyncTerminal] = useState(false);
 
   async function handleUpdate(values: {
     name: string;
@@ -66,6 +68,7 @@ export function EnvironmentDetailManager({
     setRefreshPending(true);
     setRefreshError(null);
     setRefreshSuccess(null);
+    setShowSyncTerminal(true);
     try {
       const response = await refreshEnvironment(detail.environment.id);
       setDetail(response);
@@ -159,9 +162,19 @@ export function EnvironmentDetailManager({
               >
                 {refreshPending ? "Refreshing..." : "Refresh Cache"}
               </button>
+              <button
+                type="button"
+                onClick={() => setShowSyncTerminal((value) => !value)}
+                className="rounded-md border border-line px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-fog"
+              >
+                {showSyncTerminal ? "Hide Sync Terminal" : "Show Sync Terminal"}
+              </button>
               {refreshSuccess ? <p className="text-sm text-emerald-700">{refreshSuccess}</p> : null}
               {refreshError ? <p className="text-sm text-red-700">{refreshError}</p> : null}
             </div>
+            {showSyncTerminal ? (
+              <EnvironmentSyncTerminal environmentId={detail.environment.id} />
+            ) : null}
             <p className="text-sm text-slate-500">
               Aliases: {parseAliases(detail.environment.aliases).join(", ") || "-"}
             </p>

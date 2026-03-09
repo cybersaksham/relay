@@ -7,6 +7,7 @@ export function subscribeToSse(
   source.onmessage = onMessage;
   source.addEventListener("terminal", onMessage as EventListener);
   source.addEventListener("status", onMessage as EventListener);
+  source.addEventListener("sync", onMessage as EventListener);
   if (onError) {
     source.onerror = onError;
   }

@@ -90,6 +90,15 @@ export interface TerminalEvent {
   created_at: string;
 }
 
+export interface EnvironmentSyncEvent {
+  id: number;
+  environment_id: string;
+  stream: "stdout" | "stderr";
+  chunk: string;
+  sequence: number;
+  created_at: string;
+}
+
 export interface DashboardResponse {
   environment_count: number;
   recent_sessions: SessionSummary[];

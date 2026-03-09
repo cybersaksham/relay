@@ -75,6 +75,16 @@ pub struct TerminalEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct EnvironmentSyncEvent {
+    pub id: i64,
+    pub environment_id: String,
+    pub stream: String,
+    pub chunk: String,
+    pub sequence: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct PolicyViolation {
     pub id: String,
     pub slack_user_id: String,

@@ -33,6 +33,10 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(streams::terminal_stream),
         )
         .route("/api/tasks/:id/events/stream", get(streams::events_stream))
+        .route(
+            "/api/environments/:id/sync/stream",
+            get(streams::environment_sync_stream),
+        )
         .with_state(state)
 }
 

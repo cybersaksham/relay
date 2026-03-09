@@ -68,3 +68,30 @@ pub async fn events_stream(
 
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
+
+pub async fn environment_sync_stream(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
+    let stream = stream! {
+        let mut after_id = 0_i64;
+        loop {
+            match queries::list_environment_sync_events_after(&state.db, &id, after_id).await {
+                Ok(events) => {
+                    for event in events {
+                        after_id = event.id;
+                        let payload = serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string());
+                        yield Ok(Event::default().event("sync").data(payload));
+                    }
+                }
+                Err(error) => {
+                    yield Ok(Event::default().event("error").data(error.to_string()));
+                    break;
+                }
+            }
+            sleep(Duration::from_secs(1)).await;
+        }
+    };
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}

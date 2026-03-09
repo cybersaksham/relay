@@ -232,6 +232,31 @@ impl EnvironmentService {
         let pool = self.pool.clone();
         let workspace_manager = self.workspace_manager.clone();
         tokio::spawn(async move {
+            let mut sync_sequence = 0_i64;
+            if let Err(error) = queries::clear_environment_sync_events(&pool, &environment.id).await
+            {
+                error!(environment_id = %environment.id, ?error, "failed to clear environment sync events");
+            }
+            append_sync_log(
+                &pool,
+                &environment.id,
+                "stdout",
+                "Starting source cache sync...",
+                &mut sync_sequence,
+            )
+            .await;
+            append_sync_log(
+                &pool,
+                &environment.id,
+                "stdout",
+                &format!(
+                    "Syncing {} on branch {}",
+                    environment.git_ssh_url, environment.default_branch
+                ),
+                &mut sync_sequence,
+            )
+            .await;
+
             let sync_result = workspace_manager
                 .reset_source_clone(
                     &previous_slug,
@@ -243,12 +268,36 @@ impl EnvironmentService {
 
             match sync_result {
                 Ok(source_path) => {
+                    append_sync_log(
+                        &pool,
+                        &environment.id,
+                        "stdout",
+                        &format!("Source cache ready at {}", source_path.display()),
+                        &mut sync_sequence,
+                    )
+                    .await;
                     if let Some(source_setup_script) =
                         normalize_script(environment.source_setup_script.as_deref())
                     {
+                        append_sync_log(
+                            &pool,
+                            &environment.id,
+                            "stdout",
+                            "[source setup] running configured setup script",
+                            &mut sync_sequence,
+                        )
+                        .await;
                         let hook_result = workspace_manager
                             .run_shell_hook(&source_path, &source_setup_script)
                             .await;
+                        append_sync_output(
+                            &pool,
+                            &environment.id,
+                            &hook_result.stdout,
+                            &hook_result.stderr,
+                            &mut sync_sequence,
+                        )
+                        .await;
                         if !hook_result.succeeded() {
                             let summary = summarize_hook_failure(
                                 "Source setup script failed",
@@ -265,6 +314,14 @@ impl EnvironmentService {
                                 stderr = %hook_result.stderr,
                                 "source setup hook failed"
                             );
+                            append_sync_log(
+                                &pool,
+                                &environment.id,
+                                "stderr",
+                                &summary,
+                                &mut sync_sequence,
+                            )
+                            .await;
                             if let Err(error) = queries::update_environment_source_status(
                                 &pool,
                                 &environment.id,
@@ -278,6 +335,14 @@ impl EnvironmentService {
                             }
                             return;
                         }
+                        append_sync_log(
+                            &pool,
+                            &environment.id,
+                            "stdout",
+                            "[source setup] completed successfully",
+                            &mut sync_sequence,
+                        )
+                        .await;
                         if !hook_result.stdout.trim().is_empty()
                             || !hook_result.stderr.trim().is_empty()
                         {
@@ -298,6 +363,14 @@ impl EnvironmentService {
                         source_path = %source_path.display(),
                         "environment source clone synced"
                     );
+                    append_sync_log(
+                        &pool,
+                        &environment.id,
+                        "stdout",
+                        "Environment source cache sync completed.",
+                        &mut sync_sequence,
+                    )
+                    .await;
                     if let Err(error) = queries::update_environment_source_status(
                         &pool,
                         &environment.id,
@@ -318,6 +391,14 @@ impl EnvironmentService {
                         ?sync_error,
                         "failed to sync environment source clone"
                     );
+                    append_sync_log(
+                        &pool,
+                        &environment.id,
+                        "stderr",
+                        &format!("Source sync failed: {summary}"),
+                        &mut sync_sequence,
+                    )
+                    .await;
                     if let Err(error) = queries::update_environment_source_status(
                         &pool,
                         &environment.id,
@@ -364,4 +445,40 @@ fn summarize_hook_failure(prefix: &str, stderr: &str, stdout: &str) -> String {
         "no output captured".to_string()
     };
     format!("{prefix}: {detail}")
+}
+
+async fn append_sync_log(
+    pool: &SqlitePool,
+    environment_id: &str,
+    stream: &str,
+    message: &str,
+    sequence: &mut i64,
+) {
+    let chunk = if message.ends_with('\n') {
+        message.to_string()
+    } else {
+        format!("{message}\n")
+    };
+    if let Err(error) =
+        queries::insert_environment_sync_event(pool, environment_id, stream, &chunk, *sequence)
+            .await
+    {
+        error!(environment_id = %environment_id, ?error, "failed to insert sync event");
+    }
+    *sequence += 1;
+}
+
+async fn append_sync_output(
+    pool: &SqlitePool,
+    environment_id: &str,
+    stdout: &str,
+    stderr: &str,
+    sequence: &mut i64,
+) {
+    for line in stdout.lines() {
+        append_sync_log(pool, environment_id, "stdout", line, sequence).await;
+    }
+    for line in stderr.lines() {
+        append_sync_log(pool, environment_id, "stderr", line, sequence).await;
+    }
 }

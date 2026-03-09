@@ -3,7 +3,9 @@ use chrono::{Duration, Utc};
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::db::models::{Ban, Environment, Session, TaskMessage, TaskRun, TerminalEvent};
+use crate::db::models::{
+    Ban, Environment, EnvironmentSyncEvent, Session, TaskMessage, TaskRun, TerminalEvent,
+};
 
 pub async fn list_environments(pool: &SqlitePool) -> Result<Vec<Environment>> {
     Ok(
@@ -489,6 +491,55 @@ pub async fn list_terminal_events_after(
         "SELECT * FROM terminal_events WHERE task_run_id = ? AND id > ? ORDER BY id ASC",
     )
     .bind(task_run_id)
+    .bind(after_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn clear_environment_sync_events(pool: &SqlitePool, environment_id: &str) -> Result<()> {
+    sqlx::query("DELETE FROM environment_sync_events WHERE environment_id = ?")
+        .bind(environment_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_environment_sync_event(
+    pool: &SqlitePool,
+    environment_id: &str,
+    stream: &str,
+    chunk: &str,
+    sequence: i64,
+) -> Result<EnvironmentSyncEvent> {
+    sqlx::query(
+        "INSERT INTO environment_sync_events (environment_id, stream, chunk, sequence, created_at) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(environment_id)
+    .bind(stream)
+    .bind(chunk)
+    .bind(sequence)
+    .bind(Utc::now())
+    .execute(pool)
+    .await?;
+
+    Ok(sqlx::query_as::<_, EnvironmentSyncEvent>(
+        "SELECT * FROM environment_sync_events WHERE environment_id = ? AND sequence = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(environment_id)
+    .bind(sequence)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn list_environment_sync_events_after(
+    pool: &SqlitePool,
+    environment_id: &str,
+    after_id: i64,
+) -> Result<Vec<EnvironmentSyncEvent>> {
+    Ok(sqlx::query_as::<_, EnvironmentSyncEvent>(
+        "SELECT * FROM environment_sync_events WHERE environment_id = ? AND id > ? ORDER BY id ASC",
+    )
+    .bind(environment_id)
     .bind(after_id)
     .fetch_all(pool)
     .await?)

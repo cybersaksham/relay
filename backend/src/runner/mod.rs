@@ -8,6 +8,7 @@ pub struct RunnerInput {
     pub task_run_id: String,
     pub workspace_path: String,
     pub prompt: String,
+    pub timeout_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone)]

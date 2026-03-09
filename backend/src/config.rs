@@ -44,6 +44,9 @@ pub struct CodexConfig {
     pub bin: String,
     pub default_args: Vec<String>,
     pub timeout_seconds: u64,
+    pub browser_task_timeout_seconds: u64,
+    pub playwright_cli_wrapper: PathBuf,
+    pub playwright_cli_preflight_timeout_seconds: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -106,6 +109,21 @@ impl Config {
                     .unwrap_or_else(|_| "1800".to_string())
                     .parse()
                     .context("CODEX_TIMEOUT_SECONDS must be a valid u64")?,
+                browser_task_timeout_seconds: env::var("BROWSER_TASK_TIMEOUT_SECONDS")
+                    .unwrap_or_else(|_| "420".to_string())
+                    .parse()
+                    .context("BROWSER_TASK_TIMEOUT_SECONDS must be a valid u64")?,
+                playwright_cli_wrapper: env_path("PLAYWRIGHT_CLI_WRAPPER")
+                    .or_else(default_playwright_cli_wrapper)
+                    .unwrap_or_else(|| {
+                        current_dir.join("../.codex/skills/playwright/scripts/playwright_cli.sh")
+                    }),
+                playwright_cli_preflight_timeout_seconds: env::var(
+                    "PLAYWRIGHT_CLI_PREFLIGHT_TIMEOUT_SECONDS",
+                )
+                .unwrap_or_else(|_| "20".to_string())
+                .parse()
+                .context("PLAYWRIGHT_CLI_PREFLIGHT_TIMEOUT_SECONDS must be a valid u64")?,
             },
             paths: PathConfig {
                 relay_home,
@@ -135,6 +153,10 @@ fn env_path(key: &str) -> Option<PathBuf> {
 
 fn default_relay_home() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".relay"))
+}
+
+fn default_playwright_cli_wrapper() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".codex/skills/playwright/scripts/playwright_cli.sh"))
 }
 
 pub type SharedConfig = Arc<Config>;

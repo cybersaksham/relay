@@ -113,7 +113,7 @@ impl Runner for CodexCliRunner {
                 let wait_status = wait_result.context("failed waiting for codex")?;
                 WaitOutcome::Exited(wait_status.success(), wait_status.code().map(i64::from))
             }
-            _ = tokio::time::sleep(Duration::from_secs(self.config.codex.timeout_seconds)) => {
+            _ = tokio::time::sleep(Duration::from_secs(input.timeout_seconds.unwrap_or(self.config.codex.timeout_seconds))) => {
                 let _ = child.kill().await;
                 let _ = child.wait().await;
                 WaitOutcome::TimedOut

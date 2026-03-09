@@ -1,19 +1,29 @@
+use std::process::Stdio;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use serde_json::json;
+use tokio::process::Command;
+use tokio::time::timeout;
 use tracing::{info, warn};
 
 use crate::app_state::AppState;
+use crate::config::SharedConfig;
 use crate::db::models::{Environment, Session};
 use crate::db::queries;
 use crate::policies::evaluator::PolicyDecision;
-use crate::runner::RunnerInput;
+use crate::runner::{RunnerInput, RunnerOutput};
 use crate::slack::formatter::{resolve_slack_text, resolved_payload_json};
 use crate::slack::thread_context::normalize_thread;
 use crate::slack::SlackEventEnvelope;
 use crate::tasks::reply_service::persist_and_send_reply;
+use crate::workflows::loader::{WorkflowDefinition, WorkflowRegistry};
 use crate::workflows::{matcher, renderer, selector};
+
+const PLAYWRIGHT_TASK_WORKFLOW_ID: &str = "playwright-task";
+const PLAYWRIGHT_CLI_BLOCKED_MESSAGE: &str =
+    "Browser CLI prerequisites/network are unavailable right now; task was blocked before execution.";
 
 pub async fn handle_slack_envelope(
     state: Arc<AppState>,
@@ -66,6 +76,7 @@ pub async fn handle_slack_envelope(
         let messages = state.slack.fetch_thread(&channel_id, &thread_ts).await?;
         let thread = normalize_thread(&channel_id, &thread_ts, messages)?;
         let request_text = resolve_slack_text(&text);
+        let execution_policy = classify_request_execution_policy(&request_text);
 
         match state.policies.evaluate(&user_id, &request_text) {
             PolicyDecision::Allowed => {}
@@ -130,15 +141,22 @@ pub async fn handle_slack_envelope(
                     return Ok(RequestOutcome::Rejected);
                 }
             };
-        let workflow = selector::select_workflow(
-            &state.config,
-            &state.workflows,
-            &request_text,
-            &thread,
-            environment.as_ref(),
-        )
-        .await
-        .or_else(|| matcher::match_workflow(&state.workflows, &request_text, environment.as_ref()));
+        let workflow = if let Some(pinned) = pin_playwright_workflow(&state.workflows, &execution_policy)
+        {
+            Some(pinned)
+        } else {
+            selector::select_workflow(
+                &state.config,
+                &state.workflows,
+                &request_text,
+                &thread,
+                environment.as_ref(),
+            )
+            .await
+            .or_else(|| {
+                matcher::match_workflow(&state.workflows, &request_text, environment.as_ref())
+            })
+        };
 
         let session = match existing_session {
             Some(session) => {
@@ -229,12 +247,47 @@ pub async fn handle_slack_envelope(
         )
         .await?;
 
+        if is_playwright_task_workflow(workflow.as_ref())
+            && execution_policy.explicit_cli_playwright_requested
+        {
+            if let Err(error) = run_playwright_cli_preflight(&state.config).await {
+                let error_summary = error.summary();
+                queries::update_task_run_status(
+                    &state.db,
+                    &task_run.id,
+                    "blocked",
+                    None,
+                    Some(&error_summary),
+                )
+                .await?;
+                state
+                    .sessions
+                    .update_status(
+                        &session.id,
+                        "idle",
+                        workflow.as_ref().map(|item| item.metadata.id.as_str()),
+                    )
+                    .await?;
+                persist_and_send_reply(
+                    &state,
+                    &session.id,
+                    Some(&task_run.id),
+                    &channel_id,
+                    &thread_ts,
+                    PLAYWRIGHT_CLI_BLOCKED_MESSAGE,
+                )
+                .await?;
+                return Ok(RequestOutcome::Rejected);
+            }
+        }
+
         let prompt = renderer::render_prompt(
             workflow.as_ref(),
             environment.as_ref(),
             &thread,
             &session.workspace_path,
         );
+        let prompt = apply_browser_execution_directive(prompt, &execution_policy);
 
         let output = state
             .runner
@@ -242,25 +295,20 @@ pub async fn handle_slack_envelope(
                 task_run_id: task_run.id.clone(),
                 workspace_path: session.workspace_path.clone(),
                 prompt,
+                timeout_seconds: is_playwright_task_workflow(workflow.as_ref())
+                    .then_some(state.config.codex.browser_task_timeout_seconds),
             })
             .await?;
 
-        let reply_text = if output.status == "cancelled" {
-            "Task cancelled manually.".to_string()
-        } else if output.status == "succeeded" && !output.stdout.trim().is_empty() {
-            output.stdout.trim().to_string()
-        } else if !output.stderr.trim().is_empty() {
-            format!("Task failed.\n{}", output.stderr.trim())
-        } else {
-            format!("Task finished with status {}", output.status)
-        };
+        let reply_text = build_reply_text(&output);
+        let error_summary = summarize_error_for_storage(&output);
 
         queries::update_task_run_status(
             &state.db,
             &task_run.id,
             &output.status,
             output.exit_code,
-            (!output.stderr.trim().is_empty()).then_some(output.stderr.trim()),
+            error_summary.as_deref(),
         )
         .await?;
         state
@@ -306,6 +354,40 @@ pub async fn handle_slack_envelope(
 enum RequestOutcome {
     Completed,
     Rejected,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RequestExecutionPolicy {
+    is_browser_task: bool,
+    explicit_playwright_requested: bool,
+    explicit_cli_playwright_requested: bool,
+}
+
+#[derive(Debug)]
+enum CliPreflightError {
+    MissingNpx,
+    TimedOut(String),
+    WrapperUnavailable(String),
+    NetworkUnavailable(String),
+}
+
+impl CliPreflightError {
+    fn summary(&self) -> String {
+        match self {
+            Self::MissingNpx => {
+                "Playwright CLI preflight failed: npx is not available.".to_string()
+            }
+            Self::TimedOut(step) => {
+                format!("Playwright CLI preflight timed out while {step}.")
+            }
+            Self::WrapperUnavailable(message) => {
+                format!("Playwright CLI preflight failed: {message}")
+            }
+            Self::NetworkUnavailable(message) => {
+                format!("Playwright CLI preflight network failure: {message}")
+            }
+        }
+    }
 }
 
 fn enforce_environment_binding(
@@ -363,6 +445,167 @@ async fn resolve_environment(
     Ok(None)
 }
 
+fn classify_request_execution_policy(request_text: &str) -> RequestExecutionPolicy {
+    let normalized = request_text.to_lowercase();
+    let is_browser_task = [
+        "playwright",
+        "browser",
+        "ui test",
+        "screenshot",
+        "open url",
+        "navigate",
+    ]
+    .iter()
+    .any(|phrase| normalized.contains(phrase));
+    let explicit_playwright_requested = normalized.contains("playwright");
+    let explicit_cli_playwright_requested =
+        normalized.contains("playwright cli") || normalized.contains("cli skill");
+
+    RequestExecutionPolicy {
+        is_browser_task,
+        explicit_playwright_requested,
+        explicit_cli_playwright_requested,
+    }
+}
+
+fn pin_playwright_workflow(
+    registry: &WorkflowRegistry,
+    policy: &RequestExecutionPolicy,
+) -> Option<WorkflowDefinition> {
+    if policy.explicit_playwright_requested {
+        registry.get(PLAYWRIGHT_TASK_WORKFLOW_ID)
+    } else {
+        None
+    }
+}
+
+fn is_playwright_task_workflow(workflow: Option<&WorkflowDefinition>) -> bool {
+    workflow
+        .map(|item| item.metadata.id.as_str() == PLAYWRIGHT_TASK_WORKFLOW_ID)
+        .unwrap_or(false)
+}
+
+fn apply_browser_execution_directive(prompt: String, policy: &RequestExecutionPolicy) -> String {
+    if !policy.is_browser_task {
+        return prompt;
+    }
+
+    let mut directive = String::from(
+        "Execution policy for browser tasks:\n\
+         - Prefer Playwright MCP/browser tools by default.\n\
+         - Use Playwright CLI only if the request explicitly asks for CLI.\n",
+    );
+    if policy.explicit_cli_playwright_requested {
+        directive
+            .push_str("- This request explicitly asked for Playwright CLI; CLI path is allowed.\n");
+    }
+    directive.push('\n');
+    directive.push_str(&prompt);
+    directive
+}
+
+async fn run_playwright_cli_preflight(config: &SharedConfig) -> Result<(), CliPreflightError> {
+    let timeout_seconds = config.codex.playwright_cli_preflight_timeout_seconds;
+
+    let mut npx_check = Command::new("sh");
+    npx_check
+        .arg("-lc")
+        .arg("command -v npx >/dev/null 2>&1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+
+    let npx_status = timeout(Duration::from_secs(timeout_seconds), npx_check.status())
+        .await
+        .map_err(|_| CliPreflightError::TimedOut("checking npx".to_string()))?
+        .map_err(|error| CliPreflightError::WrapperUnavailable(error.to_string()))?;
+    if !npx_status.success() {
+        return Err(CliPreflightError::MissingNpx);
+    }
+
+    let mut wrapper_check = Command::new(&config.codex.playwright_cli_wrapper);
+    wrapper_check
+        .arg("--help")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+
+    let output = timeout(Duration::from_secs(timeout_seconds), wrapper_check.output())
+        .await
+        .map_err(|_| CliPreflightError::TimedOut("checking Playwright CLI wrapper".to_string()))?
+        .map_err(|error| CliPreflightError::WrapperUnavailable(error.to_string()))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let excerpt = compact_error_excerpt(&stderr);
+    if contains_network_prereq_failure(&stderr) {
+        Err(CliPreflightError::NetworkUnavailable(excerpt))
+    } else {
+        Err(CliPreflightError::WrapperUnavailable(excerpt))
+    }
+}
+
+fn contains_network_prereq_failure(message: &str) -> bool {
+    let normalized = message.to_lowercase();
+    [
+        "enotfound",
+        "eai_again",
+        "etimedout",
+        "registry.npmjs.org",
+        "network request failed",
+        "npm error network",
+    ]
+    .iter()
+    .any(|pattern| normalized.contains(pattern))
+}
+
+fn compact_error_excerpt(message: &str) -> String {
+    if message.trim().is_empty() {
+        return "preflight check failed without stderr output".to_string();
+    }
+    message
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(220)
+        .collect()
+}
+
+fn build_reply_text(output: &RunnerOutput) -> String {
+    match output.status.as_str() {
+        "cancelled" => "Task cancelled manually.".to_string(),
+        "timed_out" => "Task timed out before completion.".to_string(),
+        "succeeded" if !output.stdout.trim().is_empty() => output.stdout.trim().to_string(),
+        _ if contains_network_prereq_failure(&output.stderr) => {
+            "Task failed due to browser runtime prerequisites/network availability.".to_string()
+        }
+        _ if !output.stderr.trim().is_empty() => {
+            format!(
+                "Task failed.\n{}",
+                compact_error_excerpt(output.stderr.trim())
+            )
+        }
+        _ => format!("Task finished with status {}", output.status),
+    }
+}
+
+fn summarize_error_for_storage(output: &RunnerOutput) -> Option<String> {
+    match output.status.as_str() {
+        "succeeded" => None,
+        "cancelled" => Some("Task was cancelled manually.".to_string()),
+        "timed_out" => Some("Task execution timed out before completion.".to_string()),
+        _ if contains_network_prereq_failure(&output.stderr) => {
+            Some("Browser runtime prerequisites/network availability issue.".to_string())
+        }
+        _ if !output.stderr.trim().is_empty() => Some(compact_error_excerpt(output.stderr.trim())),
+        _ => Some(format!("Task finished with status {}", output.status)),
+    }
+}
+
 async fn begin_processing_reaction(state: &AppState, channel_id: &str, message_ts: &str) {
     if let Err(error) = state
         .slack
@@ -408,8 +651,12 @@ async fn finish_processing_reaction(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
     use super::enforce_environment_binding;
     use crate::db::models::{Environment, Session};
+    use crate::workflows::loader::{WorkflowDefinition, WorkflowMetadata, WorkflowRegistry};
     use chrono::Utc;
 
     fn sample_session(environment_id: Option<&str>) -> Session {
@@ -469,5 +716,78 @@ mod tests {
         assert!(error
             .to_string()
             .contains("Start a new thread to use an environment"));
+    }
+
+    #[test]
+    fn classifies_browser_and_cli_playwright_requests() {
+        let policy = super::classify_request_execution_policy(
+            "Use Playwright CLI skill to open URL and count cards",
+        );
+        assert!(policy.is_browser_task);
+        assert!(policy.explicit_playwright_requested);
+        assert!(policy.explicit_cli_playwright_requested);
+    }
+
+    #[test]
+    fn classifies_non_browser_requests() {
+        let policy = super::classify_request_execution_policy("Please review PR #123");
+        assert!(!policy.is_browser_task);
+        assert!(!policy.explicit_playwright_requested);
+        assert!(!policy.explicit_cli_playwright_requested);
+    }
+
+    #[test]
+    fn pins_playwright_workflow_for_explicit_playwright_prompt() {
+        let registry = WorkflowRegistry::from_workflows(HashMap::from([(
+            "playwright-task".to_string(),
+            WorkflowDefinition {
+                metadata: WorkflowMetadata {
+                    id: "playwright-task".to_string(),
+                    name: "Playwright Task".to_string(),
+                    scope: "global".to_string(),
+                    environment_slug: None,
+                    trigger_phrases: vec!["playwright".to_string()],
+                    default_environment: None,
+                    instructions: vec!["Use browser automation".to_string()],
+                    response_mode: "reply".to_string(),
+                },
+                prompt: "Prompt".to_string(),
+                root_dir: PathBuf::from(".workflows/global/playwright-task"),
+            },
+        )]));
+        let policy = super::classify_request_execution_policy("Run this with playwright.");
+
+        let workflow =
+            super::pin_playwright_workflow(&registry, &policy).expect("workflow should be pinned");
+        assert_eq!(workflow.metadata.id, "playwright-task");
+    }
+
+    #[test]
+    fn network_precheck_error_signatures_detected() {
+        assert!(super::contains_network_prereq_failure(
+            "npm error code ENOTFOUND registry.npmjs.org"
+        ));
+        assert!(super::contains_network_prereq_failure(
+            "request failed with EAI_AGAIN"
+        ));
+        assert!(!super::contains_network_prereq_failure(
+            "permission denied opening wrapper"
+        ));
+    }
+
+    #[test]
+    fn applies_browser_execution_directive_for_browser_tasks() {
+        let policy =
+            super::classify_request_execution_policy("Use playwright to take a screenshot");
+        let prompt = super::apply_browser_execution_directive("Base prompt".to_string(), &policy);
+        assert!(prompt.contains("Prefer Playwright MCP/browser tools by default"));
+        assert!(prompt.contains("Base prompt"));
+    }
+
+    #[test]
+    fn browser_directive_allows_cli_when_explicitly_requested() {
+        let policy = super::classify_request_execution_policy("Use Playwright CLI skill");
+        let prompt = super::apply_browser_execution_directive("Base prompt".to_string(), &policy);
+        assert!(prompt.contains("CLI path is allowed"));
     }
 }

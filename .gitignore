@@ -17,3 +17,4 @@ frontend/.env
 
 # Local Setup
 node_modules
+.playwright-cli

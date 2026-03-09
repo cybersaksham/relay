@@ -9,6 +9,7 @@ import {
   SessionDetail,
   SessionSummary,
   TaskMessage,
+  WorkspaceGitDiffResponse,
 } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -113,6 +114,30 @@ export async function getTaskMessages(id: string): Promise<TaskMessage[]> {
 export async function cancelTask(id: string): Promise<CancelTaskResponse> {
   return request(`/api/tasks/${id}/cancel`, {
     method: "POST",
+  });
+}
+
+export async function getWorkspaceGitDiff(id: string): Promise<WorkspaceGitDiffResponse> {
+  return request(`/api/tasks/${id}/workspace-git-diff`);
+}
+
+export async function stageWorkspaceGitFile(
+  id: string,
+  path: string,
+): Promise<WorkspaceGitDiffResponse> {
+  return request(`/api/tasks/${id}/workspace-git-diff/stage`, {
+    method: "POST",
+    body: JSON.stringify({ path }),
+  });
+}
+
+export async function revertWorkspaceGitFile(
+  id: string,
+  path: string,
+): Promise<WorkspaceGitDiffResponse> {
+  return request(`/api/tasks/${id}/workspace-git-diff/revert`, {
+    method: "POST",
+    body: JSON.stringify({ path }),
   });
 }
 

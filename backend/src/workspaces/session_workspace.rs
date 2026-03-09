@@ -1,7 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::ffi::OsStr;
+use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 
 use anyhow::{anyhow, Context, Result};
+use serde::Serialize;
 use tokio::fs;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
@@ -28,6 +30,22 @@ impl HookRunResult {
     pub fn succeeded(&self) -> bool {
         !self.timed_out && self.exit_code == Some(0)
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceGitDiff {
+    pub available: bool,
+    pub reason: Option<String>,
+    pub files: Vec<WorkspaceGitDiffFile>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkspaceGitDiffFile {
+    pub path: String,
+    pub status: String,
+    pub staged: bool,
+    pub can_stage: bool,
+    pub diff: String,
 }
 
 #[derive(Clone)]
@@ -279,6 +297,120 @@ impl WorkspaceManager {
         }
     }
 
+    pub async fn inspect_git_diff(&self, workspace_path: &Path) -> Result<WorkspaceGitDiff> {
+        if self
+            .git_output(workspace_path, ["rev-parse", "--show-toplevel"])
+            .await
+            .is_err()
+        {
+            return Ok(WorkspaceGitDiff {
+                available: false,
+                reason: Some("Git is not configured for this workspace.".to_string()),
+                files: Vec::new(),
+            });
+        }
+
+        let status_output = self
+            .git_output(
+                workspace_path,
+                ["status", "--porcelain=v1", "--untracked-files=all"],
+            )
+            .await?;
+        let mut files = Vec::new();
+
+        for line in status_output.lines() {
+            if line.len() < 4 {
+                continue;
+            }
+
+            let index_status = line.as_bytes()[0] as char;
+            let worktree_status = line.as_bytes()[1] as char;
+            if index_status == '!' && worktree_status == '!' {
+                continue;
+            }
+
+            let raw_path = line[3..].trim();
+            let path = parse_status_path(raw_path);
+            let status = describe_git_status(index_status, worktree_status).to_string();
+            let staged = index_status != ' ' && index_status != '?';
+            let can_stage = worktree_status != ' ' || (index_status == '?' && worktree_status == '?');
+            let diff = if index_status == '?' && worktree_status == '?' {
+                self.untracked_diff(workspace_path, &path).await?
+            } else {
+                self.git_output(workspace_path, ["diff", "--no-ext-diff", "HEAD", "--", &path])
+                    .await?
+            };
+
+            files.push(WorkspaceGitDiffFile {
+                path,
+                status,
+                staged,
+                can_stage,
+                diff,
+            });
+        }
+
+        Ok(WorkspaceGitDiff {
+            available: true,
+            reason: None,
+            files,
+        })
+    }
+
+    pub async fn stage_git_file(&self, workspace_path: &Path, file_path: &str) -> Result<()> {
+        let relative_path = sanitize_workspace_relative_path(file_path)?;
+        self.git(
+            workspace_path,
+            [
+                OsStr::new("add"),
+                OsStr::new("--"),
+                relative_path.as_os_str(),
+            ],
+        )
+        .await
+    }
+
+    pub async fn revert_git_file(&self, workspace_path: &Path, file_path: &str) -> Result<()> {
+        let relative_path = sanitize_workspace_relative_path(file_path)?;
+        if self
+            .git_output(
+                workspace_path,
+                [
+                    OsStr::new("ls-files"),
+                    OsStr::new("--error-unmatch"),
+                    OsStr::new("--"),
+                    relative_path.as_os_str(),
+                ],
+            )
+            .await
+            .is_ok()
+        {
+            self.git(
+                workspace_path,
+                [
+                    OsStr::new("restore"),
+                    OsStr::new("--source=HEAD"),
+                    OsStr::new("--staged"),
+                    OsStr::new("--worktree"),
+                    OsStr::new("--"),
+                    relative_path.as_os_str(),
+                ],
+            )
+            .await?;
+            return Ok(());
+        }
+
+        let absolute_path = workspace_path.join(&relative_path);
+        match fs::metadata(&absolute_path).await {
+            Ok(metadata) if metadata.is_dir() => fs::remove_dir_all(&absolute_path).await?,
+            Ok(_) => fs::remove_file(&absolute_path).await?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+
+        Ok(())
+    }
+
     async fn git<I, S>(&self, cwd: &Path, args: I) -> Result<()>
     where
         I: IntoIterator<Item = S>,
@@ -303,5 +435,127 @@ impl WorkspaceManager {
                 String::from_utf8_lossy(&output.stderr)
             ))
         }
+    }
+
+    async fn git_output<I, S>(&self, cwd: &Path, args: I) -> Result<String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let output = self.run_git_command(cwd, args).await?;
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        } else {
+            Err(anyhow!(
+                "git command failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ))
+        }
+    }
+
+    async fn git_output_allow_failure<I, S>(
+        &self,
+        cwd: &Path,
+        args: I,
+        allowed_exit_codes: &[i32],
+    ) -> Result<String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let output = self.run_git_command(cwd, args).await?;
+        if output.status.success()
+            || output
+                .status
+                .code()
+                .is_some_and(|code| allowed_exit_codes.contains(&code))
+        {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        } else {
+            Err(anyhow!(
+                "git command failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ))
+        }
+    }
+
+    async fn run_git_command<I, S>(
+        &self,
+        cwd: &Path,
+        args: I,
+    ) -> Result<std::process::Output>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let mut command = Command::new("git");
+        command
+            .args(args)
+            .current_dir(cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        timeout(Duration::from_secs(300), command.output())
+            .await
+            .map_err(|_| anyhow!("git command timed out after 5 minutes"))?
+            .context("failed to run git command")
+    }
+
+    async fn untracked_diff(&self, cwd: &Path, path: &str) -> Result<String> {
+        self.git_output_allow_failure(
+            cwd,
+            ["diff", "--no-index", "--no-ext-diff", "--", "/dev/null", path],
+            &[1],
+        )
+        .await
+    }
+}
+
+fn sanitize_workspace_relative_path(file_path: &str) -> Result<PathBuf> {
+    let path = Path::new(file_path);
+    if path.is_absolute() {
+        return Err(anyhow!("workspace file path must be relative"));
+    }
+
+    let mut cleaned = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(part) => cleaned.push(part),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                return Err(anyhow!("workspace file path cannot traverse parent directories"));
+            }
+            _ => return Err(anyhow!("workspace file path is invalid")),
+        }
+    }
+
+    if cleaned.as_os_str().is_empty() {
+        return Err(anyhow!("workspace file path cannot be empty"));
+    }
+
+    Ok(cleaned)
+}
+
+fn parse_status_path(raw_path: &str) -> String {
+    let path = raw_path
+        .rsplit_once(" -> ")
+        .map(|(_, next)| next)
+        .unwrap_or(raw_path)
+        .trim();
+    path.trim_matches('"').to_string()
+}
+
+fn describe_git_status(index_status: char, worktree_status: char) -> &'static str {
+    match (index_status, worktree_status) {
+        ('?', '?') => "untracked",
+        ('A', _) | (_, 'A') => "added",
+        ('D', _) | (_, 'D') => "deleted",
+        ('R', _) | (_, 'R') => "renamed",
+        ('C', _) | (_, 'C') => "copied",
+        ('U', _) | (_, 'U') => "conflicted",
+        ('T', _) | (_, 'T') => "type changed",
+        ('M', _) | (_, 'M') => "modified",
+        _ => "changed",
     }
 }

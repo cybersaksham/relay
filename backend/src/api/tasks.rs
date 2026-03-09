@@ -6,11 +6,12 @@ use axum::{
     response::Response,
     Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::app_state::AppState;
 use crate::db::models::{Session, TaskMessage, TaskRun};
 use crate::db::queries;
+use crate::workspaces::session_workspace::WorkspaceGitDiff;
 
 #[derive(Debug, Serialize)]
 pub struct SessionSummaryResponse {
@@ -36,6 +37,11 @@ pub struct DashboardResponse {
 pub struct CancelTaskResponse {
     pub task_run_id: String,
     pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkspaceGitFileActionRequest {
+    pub path: String,
 }
 
 pub async fn list(
@@ -160,6 +166,59 @@ pub async fn terminal_socket(
     }))
 }
 
+pub async fn workspace_git_diff(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<WorkspaceGitDiff>, (StatusCode, String)> {
+    let session = get_session_for_task(&state, &id).await?;
+    state
+        .workspaces
+        .inspect_git_diff(std::path::Path::new(&session.workspace_path))
+        .await
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub async fn stage_workspace_git_file(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<WorkspaceGitFileActionRequest>,
+) -> Result<Json<WorkspaceGitDiff>, (StatusCode, String)> {
+    let session = get_session_for_task(&state, &id).await?;
+    let workspace_path = std::path::Path::new(&session.workspace_path);
+    state
+        .workspaces
+        .stage_git_file(workspace_path, &payload.path)
+        .await
+        .map_err(internal_error)?;
+    state
+        .workspaces
+        .inspect_git_diff(workspace_path)
+        .await
+        .map(Json)
+        .map_err(internal_error)
+}
+
+pub async fn revert_workspace_git_file(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<WorkspaceGitFileActionRequest>,
+) -> Result<Json<WorkspaceGitDiff>, (StatusCode, String)> {
+    let session = get_session_for_task(&state, &id).await?;
+    let workspace_path = std::path::Path::new(&session.workspace_path);
+    state
+        .workspaces
+        .revert_git_file(workspace_path, &payload.path)
+        .await
+        .map_err(internal_error)?;
+    state
+        .workspaces
+        .inspect_git_diff(workspace_path)
+        .await
+        .map(Json)
+        .map_err(internal_error)
+}
+
 pub async fn summarize_sessions_for_environment(
     state: &Arc<AppState>,
     environment_id: &str,
@@ -189,6 +248,16 @@ async fn build_session_summaries(
         });
     }
     Ok(summaries)
+}
+
+async fn get_session_for_task(
+    state: &Arc<AppState>,
+    id: &str,
+) -> Result<Session, (StatusCode, String)> {
+    queries::get_session(&state.db, id)
+        .await
+        .map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "task thread not found".to_string()))
 }
 
 fn internal_error(error: impl std::fmt::Display) -> (StatusCode, String) {

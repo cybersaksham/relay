@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getWebSocketUrl } from "@/lib/api";
 
+import { WorkspaceGitDiffSheet } from "@/components/workspace-git-diff-sheet";
+
 type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
 type TerminalServerMessage =
@@ -42,17 +44,17 @@ export function WorkspaceTerminalPanel({
   status: string;
   workflowName: string;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [activePanel, setActivePanel] = useState<"terminal" | "git" | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (activePanel === null) {
       return;
     }
 
     const previousOverflow = document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setIsOpen(false);
+        setActivePanel(null);
       }
     };
 
@@ -63,7 +65,7 @@ export function WorkspaceTerminalPanel({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen]);
+  }, [activePanel]);
 
   return (
     <>
@@ -83,21 +85,38 @@ export function WorkspaceTerminalPanel({
             <p className="mt-1 truncate font-mono text-xs text-slate-500">{workspacePath}</p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsOpen(true)}
-            aria-label="Open workspace terminal"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-line bg-white text-slate-700 transition hover:bg-fog"
-          >
-            <TerminalIcon />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setActivePanel("git")}
+              aria-label="Open workspace git diff"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-line bg-white text-slate-700 transition hover:bg-fog"
+            >
+              <GitDiffIcon />
+            </button>
+            <button
+              type="button"
+              onClick={() => setActivePanel("terminal")}
+              aria-label="Open workspace terminal"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-line bg-white text-slate-700 transition hover:bg-fog"
+            >
+              <TerminalIcon />
+            </button>
+          </div>
         </div>
       </section>
 
-      {isOpen ? (
+      <WorkspaceGitDiffSheet
+        sessionId={sessionId}
+        workspacePath={workspacePath}
+        isOpen={activePanel === "git"}
+        onClose={() => setActivePanel(null)}
+      />
+
+      {activePanel === "terminal" ? (
         <div
           className="fixed inset-0 z-50 bg-slate-950/45"
-          onClick={() => setIsOpen(false)}
+          onClick={() => setActivePanel(null)}
           role="presentation"
         >
           <div className="flex h-full items-end justify-center px-4 pb-0 pt-8">
@@ -116,7 +135,7 @@ export function WorkspaceTerminalPanel({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => setActivePanel(null)}
                   className="rounded-full border border-line px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-fog"
                 >
                   Close
@@ -368,6 +387,27 @@ function TerminalIcon() {
       <path d="m4 17 6-5-6-5" />
       <path d="M12 19h8" />
       <rect x="3" y="4" width="18" height="16" rx="2.5" />
+    </svg>
+  );
+}
+
+function GitDiffIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+    >
+      <path d="M7 4v16" />
+      <path d="M17 4v16" />
+      <path d="m10 8 4 4-4 4" />
+      <path d="M4 7h6" />
+      <path d="M14 17h6" />
     </svg>
   );
 }

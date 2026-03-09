@@ -121,6 +121,20 @@ export interface CancelTaskResponse {
   status: string;
 }
 
+export interface WorkspaceGitDiffFile {
+  path: string;
+  status: string;
+  staged: boolean;
+  can_stage: boolean;
+  diff: string;
+}
+
+export interface WorkspaceGitDiffResponse {
+  available: boolean;
+  reason: string | null;
+  files: WorkspaceGitDiffFile[];
+}
+
 export interface ManagedSlackMessage {
   channel_id: string;
   ts: string;

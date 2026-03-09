@@ -1,4 +1,5 @@
 pub mod formatter;
+pub mod message_manager;
 pub mod socket_mode;
 pub mod thread_context;
 pub mod web_api;

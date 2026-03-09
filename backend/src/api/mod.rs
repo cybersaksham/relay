@@ -1,4 +1,5 @@
 pub mod environments;
+pub mod slack;
 pub mod streams;
 pub mod tasks;
 
@@ -24,6 +25,11 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/api/environments/:id/refresh", post(environments::refresh))
         .route("/api/environments/:id/tasks", get(environments::tasks))
+        .route("/api/slack/messages/lookup", post(slack::lookup_message))
+        .route(
+            "/api/slack/messages",
+            axum::routing::put(slack::update_message).delete(slack::delete_message),
+        )
         .route("/api/tasks", get(tasks::list))
         .route("/api/tasks/:id", get(tasks::get))
         .route("/api/tasks/:id/messages", get(tasks::messages))

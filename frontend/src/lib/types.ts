@@ -120,3 +120,17 @@ export interface CancelTaskResponse {
   task_run_id: string;
   status: string;
 }
+
+export interface ManagedSlackMessage {
+  channel_id: string;
+  ts: string;
+  thread_ts: string | null;
+  text: string;
+  raw_text: string;
+  author_user_id: string | null;
+  author_bot_id: string | null;
+}
+
+export interface DeleteSlackMessageResponse {
+  deleted: boolean;
+}

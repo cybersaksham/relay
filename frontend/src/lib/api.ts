@@ -1,9 +1,11 @@
 import {
   CancelTaskResponse,
   DashboardResponse,
+  DeleteSlackMessageResponse,
   DeleteEnvironmentResponse,
   EnvironmentDetail,
   EnvironmentSummary,
+  ManagedSlackMessage,
   SessionDetail,
   SessionSummary,
   TaskMessage,
@@ -111,6 +113,36 @@ export async function getTaskMessages(id: string): Promise<TaskMessage[]> {
 export async function cancelTask(id: string): Promise<CancelTaskResponse> {
   return request(`/api/tasks/${id}/cancel`, {
     method: "POST",
+  });
+}
+
+export async function lookupSlackMessage(permalink: string): Promise<ManagedSlackMessage> {
+  return request("/api/slack/messages/lookup", {
+    method: "POST",
+    body: JSON.stringify({ permalink }),
+  });
+}
+
+export async function updateSlackMessage(payload: {
+  channel_id: string;
+  ts: string;
+  thread_ts?: string | null;
+  text: string;
+}): Promise<ManagedSlackMessage> {
+  return request("/api/slack/messages", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteSlackMessage(payload: {
+  channel_id: string;
+  ts: string;
+  thread_ts?: string | null;
+}): Promise<DeleteSlackMessageResponse> {
+  return request("/api/slack/messages", {
+    method: "DELETE",
+    body: JSON.stringify(payload),
   });
 }
 

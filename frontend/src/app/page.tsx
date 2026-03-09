@@ -65,6 +65,11 @@ export default async function HomePage() {
                 Inspect Slack request decisions
               </Link>
             </p>
+            <p>
+              <Link href="/manage-bot" className="underline decoration-slate-300 underline-offset-4">
+                Edit or delete a bot message
+              </Link>
+            </p>
           </div>
         </section>
       </div>

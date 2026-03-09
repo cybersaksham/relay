@@ -39,6 +39,36 @@ struct SlackBasicResponse {
     error: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct SlackAuthTestResponse {
+    ok: bool,
+    user_id: Option<String>,
+    bot_id: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SlackHistoryResponse {
+    ok: bool,
+    messages: Option<Vec<SlackFetchedMessage>>,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SlackAuthIdentity {
+    pub user_id: String,
+    pub bot_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SlackFetchedMessage {
+    pub ts: String,
+    pub user: Option<String>,
+    pub bot_id: Option<String>,
+    pub text: Option<String>,
+    pub thread_ts: Option<String>,
+}
+
 impl SlackWebClient {
     pub fn new(config: SharedConfig) -> Self {
         Self {
@@ -102,6 +132,129 @@ impl SlackWebClient {
             Err(anyhow!(response
                 .error
                 .unwrap_or_else(|| "post message failed".to_string())))
+        }
+    }
+
+    pub async fn auth_identity(&self) -> Result<SlackAuthIdentity> {
+        let response: SlackAuthTestResponse =
+            self.api_post_with_token("auth.test", json!({}), false).await?;
+        if response.ok {
+            Ok(SlackAuthIdentity {
+                user_id: response
+                    .user_id
+                    .ok_or_else(|| anyhow!("auth.test did not return user_id"))?,
+                bot_id: response.bot_id,
+            })
+        } else {
+            Err(anyhow!(response
+                .error
+                .unwrap_or_else(|| "auth.test failed".to_string())))
+        }
+    }
+
+    pub async fn fetch_message(
+        &self,
+        channel: &str,
+        ts: &str,
+        thread_ts: Option<&str>,
+    ) -> Result<SlackFetchedMessage> {
+        if let Some(thread_ts) = thread_ts.filter(|thread_ts| *thread_ts != ts) {
+            return self.fetch_thread_message(channel, thread_ts, ts).await;
+        }
+
+        let response: SlackHistoryResponse = self
+            .api_get(
+                "conversations.history",
+                &[
+                    ("channel", channel),
+                    ("oldest", ts),
+                    ("latest", ts),
+                    ("inclusive", "true"),
+                    ("limit", "1"),
+                ],
+            )
+            .await?;
+        if response.ok {
+            response
+                .messages
+                .unwrap_or_default()
+                .into_iter()
+                .find(|message| message.ts == ts)
+                .ok_or_else(|| anyhow!("message not found"))
+        } else {
+            Err(anyhow!(response
+                .error
+                .unwrap_or_else(|| "message fetch failed".to_string())))
+        }
+    }
+
+    async fn fetch_thread_message(
+        &self,
+        channel: &str,
+        thread_ts: &str,
+        ts: &str,
+    ) -> Result<SlackFetchedMessage> {
+        let response: SlackHistoryResponse = self
+            .api_get(
+                "conversations.replies",
+                &[("channel", channel), ("ts", thread_ts)],
+            )
+            .await?;
+
+        if response.ok {
+            response
+                .messages
+                .unwrap_or_default()
+                .into_iter()
+                .find(|message| message.ts == ts)
+                .ok_or_else(|| anyhow!("message not found"))
+        } else {
+            Err(anyhow!(response
+                .error
+                .unwrap_or_else(|| "thread message fetch failed".to_string())))
+        }
+    }
+
+    pub async fn update_message(&self, channel: &str, ts: &str, text: &str) -> Result<()> {
+        let response: SlackPostMessageResponse = self
+            .api_post_with_token(
+                "chat.update",
+                json!({
+                    "channel": channel,
+                    "ts": ts,
+                    "text": text,
+                    "unfurl_links": false,
+                    "unfurl_media": false
+                }),
+                false,
+            )
+            .await?;
+        if response.ok {
+            Ok(())
+        } else {
+            Err(anyhow!(response
+                .error
+                .unwrap_or_else(|| "update message failed".to_string())))
+        }
+    }
+
+    pub async fn delete_message(&self, channel: &str, ts: &str) -> Result<()> {
+        let response: SlackBasicResponse = self
+            .api_post_with_token(
+                "chat.delete",
+                json!({
+                    "channel": channel,
+                    "ts": ts
+                }),
+                false,
+            )
+            .await?;
+        if response.ok {
+            Ok(())
+        } else {
+            Err(anyhow!(response
+                .error
+                .unwrap_or_else(|| "delete message failed".to_string())))
         }
     }
 

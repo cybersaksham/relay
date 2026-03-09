@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: "/policies", label: "Policies" },
   { href: "/bans", label: "Bans" },
   { href: "/slack", label: "Slack" },
+  { href: "/manage-bot", label: "Manage Bot" },
   { href: "/pull-requests", label: "Pull Requests" },
 ];
 

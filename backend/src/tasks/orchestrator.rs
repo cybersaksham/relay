@@ -279,10 +279,14 @@ fn enforce_environment_binding(
 ) -> Result<()> {
     match (&session.environment_id, requested_environment) {
         (Some(existing_id), Some(requested)) if existing_id != &requested.id => {
-            anyhow::bail!("thread is already bound to a different environment")
+            anyhow::bail!(
+                "This thread already has a workspace bound to a different environment. Start a new thread to use another environment."
+            )
         }
         (None, Some(_)) => {
-            anyhow::bail!("thread started as a general workspace and cannot switch environments")
+            anyhow::bail!(
+                "This thread already has a general workspace. Start a new thread to use an environment."
+            )
         }
         _ => Ok(()),
     }
@@ -322,4 +326,70 @@ async fn resolve_environment(
     }
 
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::enforce_environment_binding;
+    use crate::db::models::{Environment, Session};
+    use chrono::Utc;
+
+    fn sample_session(environment_id: Option<&str>) -> Session {
+        Session {
+            id: "session-1".to_string(),
+            team_id: "T1".to_string(),
+            channel_id: "C1".to_string(),
+            thread_ts: "123.456".to_string(),
+            workspace_id: "workspace-1".to_string(),
+            workspace_path: "/tmp/workspace-1".to_string(),
+            environment_id: environment_id.map(str::to_string),
+            current_workflow_id: None,
+            status: "idle".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn sample_environment(id: &str) -> Environment {
+        Environment {
+            id: id.to_string(),
+            name: format!("Environment {id}"),
+            slug: format!("env-{id}"),
+            git_ssh_url: "git@github.com:example/repo.git".to_string(),
+            default_branch: "master".to_string(),
+            aliases: "[]".to_string(),
+            enabled: true,
+            source_sync_status: "ready".to_string(),
+            source_sync_error: None,
+            source_synced_at: Some(Utc::now()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn rejects_switching_to_another_environment_in_same_thread() {
+        let session = sample_session(Some("env-1"));
+        let requested = sample_environment("env-2");
+
+        let error = enforce_environment_binding(&session, Some(&requested))
+            .expect_err("thread should stay bound to its original environment");
+
+        assert!(error
+            .to_string()
+            .contains("Start a new thread to use another environment"));
+    }
+
+    #[test]
+    fn rejects_rebinding_general_thread_to_environment() {
+        let session = sample_session(None);
+        let requested = sample_environment("env-1");
+
+        let error = enforce_environment_binding(&session, Some(&requested))
+            .expect_err("general thread should not switch environments");
+
+        assert!(error
+            .to_string()
+            .contains("Start a new thread to use an environment"));
+    }
 }

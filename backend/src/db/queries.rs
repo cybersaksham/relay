@@ -299,6 +299,15 @@ pub async fn list_recent_task_runs(pool: &SqlitePool, limit: i64) -> Result<Vec<
     )
 }
 
+pub async fn list_recent_sessions(pool: &SqlitePool, limit: i64) -> Result<Vec<Session>> {
+    Ok(
+        sqlx::query_as::<_, Session>("SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?")
+            .bind(limit)
+            .fetch_all(pool)
+            .await?,
+    )
+}
+
 pub async fn list_task_runs_for_environment(
     pool: &SqlitePool,
     environment_id: &str,
@@ -308,6 +317,18 @@ pub async fn list_task_runs_for_environment(
          INNER JOIN sessions s ON s.id = tr.session_id
          WHERE s.environment_id = ?
          ORDER BY tr.created_at DESC",
+    )
+    .bind(environment_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn list_sessions_for_environment(
+    pool: &SqlitePool,
+    environment_id: &str,
+) -> Result<Vec<Session>> {
+    Ok(sqlx::query_as::<_, Session>(
+        "SELECT * FROM sessions WHERE environment_id = ? ORDER BY updated_at DESC",
     )
     .bind(environment_id)
     .fetch_all(pool)
@@ -527,6 +548,18 @@ pub async fn get_latest_run_for_session(
     )
     .bind(session_id)
     .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn list_task_runs_for_session(
+    pool: &SqlitePool,
+    session_id: &str,
+) -> Result<Vec<TaskRun>> {
+    Ok(sqlx::query_as::<_, TaskRun>(
+        "SELECT * FROM task_runs WHERE session_id = ? ORDER BY created_at DESC",
+    )
+    .bind(session_id)
+    .fetch_all(pool)
     .await?)
 }
 

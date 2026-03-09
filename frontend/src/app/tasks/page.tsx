@@ -15,9 +15,9 @@ export default async function TasksPage() {
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Task History</h2>
+          <h2 className="text-lg font-semibold text-ink">Thread History</h2>
         </div>
-        <TaskList tasks={dashboard.recent_tasks} />
+        <TaskList tasks={dashboard.recent_sessions} />
       </section>
     </div>
   );

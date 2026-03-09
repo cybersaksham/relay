@@ -7,6 +7,7 @@ use axum::{
 };
 use serde::Serialize;
 
+use crate::api::tasks as task_api;
 use crate::app_state::AppState;
 use crate::db::models::Environment;
 use crate::environments::service::{
@@ -87,13 +88,10 @@ pub async fn get(
 pub async fn tasks(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
-) -> Result<Json<Vec<crate::db::models::TaskRun>>, (StatusCode, String)> {
-    state
-        .environments
-        .tasks(&id)
+) -> Result<Json<Vec<task_api::SessionSummaryResponse>>, (StatusCode, String)> {
+    task_api::summarize_sessions_for_environment(&state, &id)
         .await
         .map(Json)
-        .map_err(internal_error)
 }
 
 fn internal_error(error: impl std::fmt::Display) -> (StatusCode, String) {

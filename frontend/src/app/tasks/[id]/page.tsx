@@ -14,7 +14,9 @@ export default async function TaskPage({
   return (
     <div className="page-shell">
       <div>
-        <h1 className="text-3xl font-semibold text-ink">Task {task.run.id.slice(0, 8)}</h1>
+        <h1 className="text-3xl font-semibold text-ink">
+          Thread {task.session.thread_ts}
+        </h1>
       </div>
 
       <section className="surface overflow-hidden">
@@ -28,11 +30,13 @@ export default async function TaskPage({
           <tbody>
             <tr className="border-b border-line">
               <td>Status</td>
-              <td className="capitalize">{task.run.status.replaceAll("_", " ")}</td>
+              <td className="capitalize">
+                {(task.latest_run?.status ?? task.session.status).replaceAll("_", " ")}
+              </td>
             </tr>
             <tr className="border-b border-line">
-              <td>Workflow</td>
-              <td>{task.run.workflow_name ?? "Generic run"}</td>
+              <td>Latest Workflow</td>
+              <td>{task.latest_run?.workflow_name ?? "Generic run"}</td>
             </tr>
             <tr className="border-b border-line">
               <td>Workspace ID</td>
@@ -47,16 +51,59 @@ export default async function TaskPage({
               <td className="font-mono text-xs">{task.session.thread_ts}</td>
             </tr>
             <tr>
-              <td>Started</td>
-              <td>{formatUtcTimestamp(task.run.started_at)}</td>
+              <td>Latest Run</td>
+              <td>
+                {task.latest_run
+                  ? formatUtcTimestamp(task.latest_run.started_at)
+                  : "No runs yet"}
+              </td>
             </tr>
           </tbody>
         </table>
       </section>
 
+      <section className="surface overflow-hidden">
+        <div className="surface-header">
+          <h2 className="text-lg font-semibold text-ink">Run History</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Status</th>
+                <th>Workflow</th>
+                <th>Started</th>
+              </tr>
+            </thead>
+            <tbody>
+              {task.runs.map((run) => (
+                <tr key={run.id} className="border-b border-line last:border-b-0">
+                  <td className="font-mono text-xs">{run.id.slice(0, 8)}</td>
+                  <td className="capitalize">{run.status.replaceAll("_", " ")}</td>
+                  <td>{run.workflow_name ?? "Generic run"}</td>
+                  <td>{formatUtcTimestamp(run.started_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
         <ChatTranscript messages={messages} />
-        <TerminalStream taskId={task.run.id} />
+        {task.latest_run ? (
+          <TerminalStream taskId={task.latest_run.id} />
+        ) : (
+          <section className="surface overflow-hidden">
+            <div className="surface-header">
+              <h2 className="text-lg font-semibold text-ink">Live Terminal</h2>
+            </div>
+            <div className="surface-body text-sm text-slate-600">
+              No terminal output is available for this thread yet.
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

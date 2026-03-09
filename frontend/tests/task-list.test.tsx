@@ -7,6 +7,6 @@ import { TaskList } from "@/components/task-list";
 describe("TaskList", () => {
   it("shows fallback copy when empty", () => {
     render(<TaskList tasks={[]} />);
-    expect(screen.getByText(/No tasks have been recorded yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/No task threads have been recorded yet/i)).toBeInTheDocument();
   });
 });

@@ -3,9 +3,9 @@ import {
   DeleteEnvironmentResponse,
   EnvironmentDetail,
   EnvironmentSummary,
-  TaskDetail,
+  SessionDetail,
+  SessionSummary,
   TaskMessage,
-  TaskSummary,
 } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -85,11 +85,11 @@ export async function getEnvironment(id: string): Promise<EnvironmentDetail> {
   return request(`/api/environments/${id}`);
 }
 
-export async function getEnvironmentTasks(id: string): Promise<TaskSummary[]> {
+export async function getEnvironmentTasks(id: string): Promise<SessionSummary[]> {
   return request(`/api/environments/${id}/tasks`);
 }
 
-export async function getTask(id: string): Promise<TaskDetail> {
+export async function getTask(id: string): Promise<SessionDetail> {
   return request(`/api/tasks/${id}`);
 }
 

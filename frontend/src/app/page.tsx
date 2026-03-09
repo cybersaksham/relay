@@ -5,8 +5,12 @@ import { getDashboard } from "@/lib/api";
 
 export default async function HomePage() {
   const dashboard = await getDashboard();
-  const runningCount = dashboard.recent_tasks.filter((task) => task.status === "running").length;
-  const queuedCount = dashboard.recent_tasks.filter((task) => task.status === "queued").length;
+  const runningCount = dashboard.recent_sessions.filter(
+    (session) => session.latest_run?.status === "running",
+  ).length;
+  const queuedCount = dashboard.recent_sessions.filter(
+    (session) => session.latest_run?.status === "queued",
+  ).length;
 
   return (
     <div className="page-shell">
@@ -24,7 +28,7 @@ export default async function HomePage() {
           </div>
           <div className="surface-body space-y-2 text-sm text-slate-700">
             <p>Environments: {dashboard.environment_count}</p>
-            <p>Tasks: {dashboard.recent_tasks.length}</p>
+            <p>Threads: {dashboard.recent_sessions.length}</p>
             <p>Running: {runningCount}</p>
             <p>Queued: {queuedCount}</p>
             <p>Banned users: 0</p>
@@ -67,9 +71,9 @@ export default async function HomePage() {
 
       <section className="space-y-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Latest Relay Runs</h2>
+          <h2 className="text-lg font-semibold text-ink">Latest Thread Activity</h2>
         </div>
-        <TaskList tasks={dashboard.recent_tasks} />
+        <TaskList tasks={dashboard.recent_sessions} />
       </section>
     </div>
   );

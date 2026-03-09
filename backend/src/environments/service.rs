@@ -183,10 +183,6 @@ impl EnvironmentService {
         }
     }
 
-    pub async fn tasks(&self, environment_id: &str) -> Result<Vec<crate::db::models::TaskRun>> {
-        queries::list_task_runs_for_environment(&self.pool, environment_id).await
-    }
-
     pub fn source_path_for_slug(&self, slug: &str) -> PathBuf {
         self.workspace_manager.source_path(slug)
     }

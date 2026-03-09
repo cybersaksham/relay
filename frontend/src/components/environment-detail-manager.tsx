@@ -7,7 +7,7 @@ import { useState } from "react";
 import { deleteEnvironment, updateEnvironment } from "@/lib/api";
 import { parseAliases } from "@/lib/environments";
 import { formatUtcTimestamp } from "@/lib/format";
-import { EnvironmentDetail, TaskSummary } from "@/lib/types";
+import { EnvironmentDetail, SessionSummary } from "@/lib/types";
 
 import {
   EnvironmentForm,
@@ -33,7 +33,7 @@ export function EnvironmentDetailManager({
   tasks,
 }: {
   initialDetail: EnvironmentDetail;
-  tasks: TaskSummary[];
+  tasks: SessionSummary[];
 }) {
   const router = useRouter();
   const [detail, setDetail] = useState(initialDetail);
@@ -156,7 +156,7 @@ export function EnvironmentDetailManager({
 
         <section className="space-y-4">
           <div>
-            <h2 className="text-lg font-semibold text-ink">Tasks In This Environment</h2>
+            <h2 className="text-lg font-semibold text-ink">Threads In This Environment</h2>
           </div>
           <TaskList tasks={tasks} />
         </section>

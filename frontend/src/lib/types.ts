@@ -90,5 +90,17 @@ export interface TerminalEvent {
 
 export interface DashboardResponse {
   environment_count: number;
-  recent_tasks: TaskSummary[];
+  recent_sessions: SessionSummary[];
+}
+
+export interface SessionSummary {
+  session: Session;
+  latest_run: TaskSummary | null;
+  run_count: number;
+}
+
+export interface SessionDetail {
+  session: Session;
+  latest_run: TaskSummary | null;
+  runs: TaskSummary[];
 }

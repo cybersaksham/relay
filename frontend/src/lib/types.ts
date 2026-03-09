@@ -104,3 +104,8 @@ export interface SessionDetail {
   latest_run: TaskSummary | null;
   runs: TaskSummary[];
 }
+
+export interface CancelTaskResponse {
+  task_run_id: string;
+  status: string;
+}

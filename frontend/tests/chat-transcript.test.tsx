@@ -4,6 +4,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ThreadConversation } from "@/components/thread-conversation";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    refresh: vi.fn(),
+  }),
+}));
+
+vi.mock("@/lib/api", () => ({
+  cancelTask: vi.fn(),
+}));
+
 vi.mock("@/components/terminal-stream", () => ({
   TerminalStream: ({ title }: { title: string }) => <div>{title}</div>,
 }));
@@ -12,6 +22,7 @@ describe("ThreadConversation", () => {
   it("renders resolved message text with per-run processing section", () => {
     render(
       <ThreadConversation
+        sessionId="session"
         runs={[
           {
             id: "run-1",

@@ -1,5 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+import { cancelTask } from "@/lib/api";
 import { formatUtcTimestamp } from "@/lib/format";
 import { TaskMessage, TaskSummary } from "@/lib/types";
 
@@ -21,12 +25,17 @@ interface RunConversation {
 }
 
 export function ThreadConversation({
+  sessionId,
   runs,
   messages,
 }: {
+  sessionId: string;
   runs: TaskSummary[];
   messages: TaskMessage[];
 }) {
+  const router = useRouter();
+  const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const sortedRuns = [...runs].sort(
     (left, right) => new Date(left.started_at).getTime() - new Date(right.started_at).getTime(),
   );
@@ -69,12 +78,31 @@ export function ThreadConversation({
     ungroupedMessages.push(message);
   }
 
+  async function handleCancel(runId: string) {
+    setCancelError(null);
+    setCancellingRunId(runId);
+
+    try {
+      await cancelTask(sessionId);
+      router.refresh();
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : "Failed to cancel request.");
+    } finally {
+      setCancellingRunId(null);
+    }
+  }
+
   return (
     <section className="surface overflow-hidden">
       <div className="surface-header">
         <h2 className="text-lg font-semibold text-ink">Thread Conversation</h2>
       </div>
       <div className="surface-body space-y-6">
+        {cancelError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {cancelError}
+          </div>
+        ) : null}
         {runConversations.map((conversation, index) => (
           <article
             key={conversation.run.id}
@@ -96,6 +124,18 @@ export function ThreadConversation({
                 <span className="rounded-full border border-line px-2 py-1 font-medium text-slate-600">
                   {conversation.run.workflow_name ?? "Generic run"}
                 </span>
+                {isCancelableStatus(conversation.run.status) ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleCancel(conversation.run.id)}
+                    disabled={cancellingRunId !== null}
+                    className="rounded-full border border-red-200 bg-red-50 px-3 py-1 font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {cancellingRunId === conversation.run.id
+                      ? "Cancelling..."
+                      : "Cancel Request"}
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -131,6 +171,10 @@ export function ThreadConversation({
       </div>
     </section>
   );
+}
+
+function isCancelableStatus(status: string): boolean {
+  return status === "queued" || status === "running" || status === "waiting_for_reply";
 }
 
 function MessageBubble({ message }: { message: TaskMessage }) {

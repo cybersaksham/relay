@@ -366,6 +366,21 @@ pub async fn has_active_run(pool: &SqlitePool, session_id: &str) -> Result<bool>
     Ok(count > 0)
 }
 
+pub async fn get_active_run_for_session(
+    pool: &SqlitePool,
+    session_id: &str,
+) -> Result<Option<TaskRun>> {
+    Ok(sqlx::query_as::<_, TaskRun>(
+        "SELECT * FROM task_runs
+         WHERE session_id = ? AND status IN ('queued', 'running', 'waiting_for_reply')
+         ORDER BY created_at DESC
+         LIMIT 1",
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
 pub async fn insert_task_message(
     pool: &SqlitePool,
     session_id: &str,

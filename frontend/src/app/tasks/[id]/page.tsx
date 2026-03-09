@@ -61,7 +61,11 @@ export default async function TaskPage({
         </table>
       </section>
 
-      <ThreadConversation runs={task.runs} messages={messages} />
+      <ThreadConversation
+        sessionId={task.session.id}
+        runs={task.runs}
+        messages={messages}
+      />
     </div>
   );
 }

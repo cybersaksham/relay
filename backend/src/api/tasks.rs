@@ -31,6 +31,12 @@ pub struct DashboardResponse {
     pub recent_sessions: Vec<SessionSummaryResponse>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct CancelTaskResponse {
+    pub task_run_id: String,
+    pub status: String,
+}
+
 pub async fn list(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<DashboardResponse>, (StatusCode, String)> {
@@ -84,6 +90,43 @@ pub async fn messages(
         .await
         .map(Json)
         .map_err(internal_error)
+}
+
+pub async fn cancel(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<CancelTaskResponse>, (StatusCode, String)> {
+    let session = queries::get_session(&state.db, &id)
+        .await
+        .map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "task thread not found".to_string()))?;
+
+    let active_run = queries::get_active_run_for_session(&state.db, &session.id)
+        .await
+        .map_err(internal_error)?
+        .ok_or_else(|| {
+            (
+                StatusCode::CONFLICT,
+                "No running request found in this thread.".to_string(),
+            )
+        })?;
+
+    let cancelled = state
+        .runner
+        .cancel(&active_run.id)
+        .await
+        .map_err(internal_error)?;
+    if !cancelled {
+        return Err((
+            StatusCode::CONFLICT,
+            "Unable to cancel this request because it is no longer active.".to_string(),
+        ));
+    }
+
+    Ok(Json(CancelTaskResponse {
+        task_run_id: active_run.id,
+        status: "cancellation_requested".to_string(),
+    }))
 }
 
 pub async fn summarize_sessions_for_environment(

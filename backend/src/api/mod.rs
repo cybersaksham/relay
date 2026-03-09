@@ -4,7 +4,7 @@ pub mod tasks;
 
 use std::sync::Arc;
 
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{extract::State, routing::get, routing::post, Json, Router};
 use serde_json::json;
 
 use crate::app_state::AppState;
@@ -26,6 +26,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/tasks", get(tasks::list))
         .route("/api/tasks/:id", get(tasks::get))
         .route("/api/tasks/:id/messages", get(tasks::messages))
+        .route("/api/tasks/:id/cancel", post(tasks::cancel))
         .route(
             "/api/tasks/:id/terminal/stream",
             get(streams::terminal_stream),

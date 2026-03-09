@@ -1,4 +1,5 @@
 import {
+  CancelTaskResponse,
   DashboardResponse,
   DeleteEnvironmentResponse,
   EnvironmentDetail,
@@ -95,6 +96,12 @@ export async function getTask(id: string): Promise<SessionDetail> {
 
 export async function getTaskMessages(id: string): Promise<TaskMessage[]> {
   return request(`/api/tasks/${id}/messages`);
+}
+
+export async function cancelTask(id: string): Promise<CancelTaskResponse> {
+  return request(`/api/tasks/${id}/cancel`, {
+    method: "POST",
+  });
 }
 
 export function getSseUrl(path: string): string {

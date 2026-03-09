@@ -21,5 +21,6 @@ pub struct RunnerOutput {
 #[async_trait]
 pub trait Runner: Send + Sync {
     async fn run(&self, input: RunnerInput) -> anyhow::Result<RunnerOutput>;
+    async fn cancel(&self, task_run_id: &str) -> anyhow::Result<bool>;
     fn kind(&self) -> &'static str;
 }

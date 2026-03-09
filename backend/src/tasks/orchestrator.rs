@@ -245,7 +245,9 @@ pub async fn handle_slack_envelope(
             })
             .await?;
 
-        let reply_text = if output.status == "succeeded" && !output.stdout.trim().is_empty() {
+        let reply_text = if output.status == "cancelled" {
+            "Task cancelled manually.".to_string()
+        } else if output.status == "succeeded" && !output.stdout.trim().is_empty() {
             output.stdout.trim().to_string()
         } else if !output.stderr.trim().is_empty() {
             format!("Task failed.\n{}", output.stderr.trim())

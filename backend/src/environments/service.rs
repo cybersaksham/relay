@@ -21,6 +21,8 @@ pub struct CreateEnvironmentInput {
     pub default_branch: String,
     pub aliases: Vec<String>,
     pub enabled: Option<bool>,
+    pub source_setup_script: Option<String>,
+    pub workspace_setup_script: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -61,6 +63,9 @@ impl EnvironmentService {
     }
 
     pub async fn create(&self, input: CreateEnvironmentInput) -> Result<EnvironmentWithPaths> {
+        let source_setup_script = normalize_script(input.source_setup_script.as_deref());
+        let workspace_setup_script = normalize_script(input.workspace_setup_script.as_deref());
+
         if queries::get_environment_by_slug(&self.pool, &input.slug)
             .await?
             .is_some()
@@ -79,6 +84,8 @@ impl EnvironmentService {
             &input.default_branch,
             &aliases,
             input.enabled.unwrap_or(true),
+            source_setup_script.as_deref(),
+            workspace_setup_script.as_deref(),
         )
         .await?;
 
@@ -98,6 +105,8 @@ impl EnvironmentService {
         id: &str,
         input: CreateEnvironmentInput,
     ) -> Result<EnvironmentWithPaths> {
+        let source_setup_script = normalize_script(input.source_setup_script.as_deref());
+        let workspace_setup_script = normalize_script(input.workspace_setup_script.as_deref());
         let existing = self
             .get(id)
             .await?
@@ -122,6 +131,8 @@ impl EnvironmentService {
             &input.default_branch,
             &aliases,
             input.enabled.unwrap_or(true),
+            source_setup_script.as_deref(),
+            workspace_setup_script.as_deref(),
         )
         .await?;
 
@@ -155,6 +166,32 @@ impl EnvironmentService {
 
         Ok(DeleteEnvironmentResponse {
             deleted_id: environment.id,
+        })
+    }
+
+    pub async fn refresh_source(&self, id: &str) -> Result<EnvironmentWithPaths> {
+        let environment = self
+            .get(id)
+            .await?
+            .ok_or_else(|| anyhow!("environment not found"))?;
+
+        if environment.source_sync_status == "syncing" {
+            return Err(anyhow!("environment source sync already in progress"));
+        }
+
+        queries::update_environment_source_status(&self.pool, id, "syncing", None, None).await?;
+        let refreshed = self
+            .get(id)
+            .await?
+            .ok_or_else(|| anyhow!("environment not found"))?;
+        self.spawn_source_sync(refreshed.clone());
+
+        Ok(EnvironmentWithPaths {
+            source_path: self
+                .source_path_for_slug(&refreshed.slug)
+                .display()
+                .to_string(),
+            environment: refreshed,
         })
     }
 
@@ -195,18 +232,6 @@ impl EnvironmentService {
         let pool = self.pool.clone();
         let workspace_manager = self.workspace_manager.clone();
         tokio::spawn(async move {
-            if let Err(error) = queries::update_environment_source_status(
-                &pool,
-                &environment.id,
-                "syncing",
-                None,
-                None,
-            )
-            .await
-            {
-                error!(environment_id = %environment.id, ?error, "failed to mark environment as syncing");
-            }
-
             let sync_result = workspace_manager
                 .reset_source_clone(
                     &previous_slug,
@@ -218,6 +243,55 @@ impl EnvironmentService {
 
             match sync_result {
                 Ok(source_path) => {
+                    if let Some(source_setup_script) =
+                        normalize_script(environment.source_setup_script.as_deref())
+                    {
+                        let hook_result = workspace_manager
+                            .run_shell_hook(&source_path, &source_setup_script)
+                            .await;
+                        if !hook_result.succeeded() {
+                            let summary = summarize_hook_failure(
+                                "Source setup script failed",
+                                &hook_result.stderr,
+                                &hook_result.stdout,
+                            );
+                            error!(
+                                environment_id = %environment.id,
+                                environment_slug = %environment.slug,
+                                source_path = %source_path.display(),
+                                exit_code = ?hook_result.exit_code,
+                                timed_out = hook_result.timed_out,
+                                stdout = %hook_result.stdout,
+                                stderr = %hook_result.stderr,
+                                "source setup hook failed"
+                            );
+                            if let Err(error) = queries::update_environment_source_status(
+                                &pool,
+                                &environment.id,
+                                "failed",
+                                Some(&summary),
+                                None,
+                            )
+                            .await
+                            {
+                                error!(environment_id = %environment.id, ?error, "failed to mark environment as failed");
+                            }
+                            return;
+                        }
+                        if !hook_result.stdout.trim().is_empty()
+                            || !hook_result.stderr.trim().is_empty()
+                        {
+                            info!(
+                                environment_id = %environment.id,
+                                environment_slug = %environment.slug,
+                                source_path = %source_path.display(),
+                                stdout = %hook_result.stdout,
+                                stderr = %hook_result.stderr,
+                                "source setup hook completed"
+                            );
+                        }
+                    }
+
                     info!(
                         environment_id = %environment.id,
                         environment_slug = %environment.slug,
@@ -237,6 +311,7 @@ impl EnvironmentService {
                     }
                 }
                 Err(sync_error) => {
+                    let summary = compact_error_excerpt(&sync_error.to_string());
                     error!(
                         environment_id = %environment.id,
                         environment_slug = %environment.slug,
@@ -247,7 +322,7 @@ impl EnvironmentService {
                         &pool,
                         &environment.id,
                         "failed",
-                        Some(&sync_error.to_string()),
+                        Some(&summary),
                         None,
                     )
                     .await
@@ -258,4 +333,35 @@ impl EnvironmentService {
             }
         });
     }
+}
+
+fn normalize_script(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn compact_error_excerpt(message: &str) -> String {
+    if message.trim().is_empty() {
+        return "hook command failed without stderr output".to_string();
+    }
+    message
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(220)
+        .collect()
+}
+
+fn summarize_hook_failure(prefix: &str, stderr: &str, stdout: &str) -> String {
+    let detail = if !stderr.trim().is_empty() {
+        compact_error_excerpt(stderr)
+    } else if !stdout.trim().is_empty() {
+        compact_error_excerpt(stdout)
+    } else {
+        "no output captured".to_string()
+    };
+    format!("{prefix}: {detail}")
 }

@@ -12,6 +12,8 @@ export interface EnvironmentFormValues {
   default_branch: string;
   aliases: string[];
   enabled: boolean;
+  source_setup_script: string;
+  workspace_setup_script: string;
 }
 
 interface EnvironmentFormProps {
@@ -32,6 +34,8 @@ const DEFAULT_VALUES: EnvironmentFormValues = {
   default_branch: "",
   aliases: [],
   enabled: true,
+  source_setup_script: "",
+  workspace_setup_script: "",
 };
 
 export function environmentToFormValues(environment: EnvironmentSummary): EnvironmentFormValues {
@@ -42,6 +46,8 @@ export function environmentToFormValues(environment: EnvironmentSummary): Enviro
     default_branch: environment.default_branch,
     aliases: parseAliases(environment.aliases),
     enabled: environment.enabled,
+    source_setup_script: environment.source_setup_script ?? "",
+    workspace_setup_script: environment.workspace_setup_script ?? "",
   };
 }
 
@@ -82,6 +88,8 @@ export function EnvironmentForm({
         default_branch: String(form.get("default_branch") ?? ""),
         aliases,
         enabled: true,
+        source_setup_script: String(form.get("source_setup_script") ?? "").trim(),
+        workspace_setup_script: String(form.get("workspace_setup_script") ?? "").trim(),
       });
       if (!initialValues) {
         formElement.reset();
@@ -136,6 +144,20 @@ export function EnvironmentForm({
           defaultValue={values.aliases.join(", ")}
           className="md:col-span-2"
         />
+        <TextAreaField
+          label="Source Setup Script"
+          name="source_setup_script"
+          placeholder="npm ci"
+          defaultValue={values.source_setup_script}
+          className="md:col-span-2"
+        />
+        <TextAreaField
+          label="Workspace Setup Script"
+          name="workspace_setup_script"
+          placeholder="git fetch --depth 1 origin master && git reset --hard origin/master && npm ci"
+          defaultValue={values.workspace_setup_script}
+          className="md:col-span-2"
+        />
       </div>
       {error ? <p className="text-sm text-red-700">{error}</p> : null}
       <div className="flex flex-wrap gap-3">
@@ -157,6 +179,32 @@ export function EnvironmentForm({
         ) : null}
       </div>
     </form>
+  );
+}
+
+function TextAreaField({
+  label,
+  name,
+  placeholder,
+  defaultValue,
+  className,
+}: {
+  label: string;
+  name: string;
+  placeholder?: string;
+  defaultValue?: string;
+  className?: string;
+}) {
+  return (
+    <label className={`flex flex-col gap-2 ${className ?? ""}`}>
+      <span className="text-sm font-medium">{label}</span>
+      <textarea
+        className="min-h-24 w-full rounded-lg border border-line bg-white px-3 py-2 font-mono text-sm outline-none ring-0 transition focus:border-slate-400"
+        name={name}
+        placeholder={placeholder}
+        defaultValue={defaultValue}
+      />
+    </label>
   );
 }
 

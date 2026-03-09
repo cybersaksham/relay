@@ -30,6 +30,8 @@ describe("EnvironmentManager", () => {
             source_sync_status: "ready",
             source_sync_error: null,
             source_synced_at: new Date().toISOString(),
+            source_setup_script: null,
+            workspace_setup_script: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },

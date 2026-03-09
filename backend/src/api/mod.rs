@@ -22,6 +22,7 @@ pub fn router(state: Arc<AppState>) -> Router {
                 .put(environments::update)
                 .delete(environments::delete),
         )
+        .route("/api/environments/:id/refresh", post(environments::refresh))
         .route("/api/environments/:id/tasks", get(environments::tasks))
         .route("/api/tasks", get(tasks::list))
         .route("/api/tasks/:id", get(tasks::get))

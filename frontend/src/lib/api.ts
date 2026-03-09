@@ -52,6 +52,8 @@ export async function createEnvironment(payload: {
   default_branch: string;
   aliases: string[];
   enabled?: boolean;
+  source_setup_script?: string | null;
+  workspace_setup_script?: string | null;
 }): Promise<EnvironmentDetail> {
   return request("/api/environments", {
     method: "POST",
@@ -68,6 +70,8 @@ export async function updateEnvironment(
     default_branch: string;
     aliases: string[];
     enabled?: boolean;
+    source_setup_script?: string | null;
+    workspace_setup_script?: string | null;
   },
 ): Promise<EnvironmentDetail> {
   return request(`/api/environments/${id}`, {
@@ -88,6 +92,12 @@ export async function getEnvironment(id: string): Promise<EnvironmentDetail> {
 
 export async function getEnvironmentTasks(id: string): Promise<SessionSummary[]> {
   return request(`/api/environments/${id}/tasks`);
+}
+
+export async function refreshEnvironment(id: string): Promise<EnvironmentDetail> {
+  return request(`/api/environments/${id}/refresh`, {
+    method: "POST",
+  });
 }
 
 export async function getTask(id: string): Promise<SessionDetail> {

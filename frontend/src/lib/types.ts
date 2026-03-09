@@ -20,6 +20,8 @@ export interface EnvironmentSummary {
   source_sync_status: "pending" | "syncing" | "ready" | "failed" | string;
   source_sync_error: string | null;
   source_synced_at: string | null;
+  source_setup_script: string | null;
+  workspace_setup_script: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -37,8 +37,14 @@ export function EnvironmentManager({
     default_branch: string;
     aliases: string[];
     enabled: boolean;
+    source_setup_script: string;
+    workspace_setup_script: string;
   }) {
-    const response = await createEnvironment(values);
+    const response = await createEnvironment({
+      ...values,
+      source_setup_script: values.source_setup_script || null,
+      workspace_setup_script: values.workspace_setup_script || null,
+    });
     setEnvironments((current) =>
       [response.environment, ...current].sort((left, right) => left.name.localeCompare(right.name)),
     );

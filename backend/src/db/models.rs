@@ -14,6 +14,8 @@ pub struct Environment {
     pub source_sync_status: String,
     pub source_sync_error: Option<String>,
     pub source_synced_at: Option<DateTime<Utc>>,
+    pub source_setup_script: Option<String>,
+    pub workspace_setup_script: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

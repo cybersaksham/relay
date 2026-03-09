@@ -12,6 +12,7 @@ pub struct Config {
     pub slack: SlackConfig,
     pub authorization: AuthorizationConfig,
     pub codex: CodexConfig,
+    pub hooks: HookConfig,
     pub paths: PathConfig,
 }
 
@@ -47,6 +48,11 @@ pub struct CodexConfig {
     pub browser_task_timeout_seconds: u64,
     pub playwright_cli_wrapper: PathBuf,
     pub playwright_cli_preflight_timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct HookConfig {
+    pub timeout_seconds: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -124,6 +130,12 @@ impl Config {
                 .unwrap_or_else(|_| "20".to_string())
                 .parse()
                 .context("PLAYWRIGHT_CLI_PREFLIGHT_TIMEOUT_SECONDS must be a valid u64")?,
+            },
+            hooks: HookConfig {
+                timeout_seconds: env::var("ENV_HOOK_TIMEOUT_SECONDS")
+                    .unwrap_or_else(|_| "900".to_string())
+                    .parse()
+                    .context("ENV_HOOK_TIMEOUT_SECONDS must be a valid u64")?,
             },
             paths: PathConfig {
                 relay_home,

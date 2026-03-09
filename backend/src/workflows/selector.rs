@@ -255,6 +255,8 @@ mod tests {
             source_sync_status: "ready".to_string(),
             source_sync_error: None,
             source_synced_at: Some(Utc::now()),
+            source_setup_script: None,
+            workspace_setup_script: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };

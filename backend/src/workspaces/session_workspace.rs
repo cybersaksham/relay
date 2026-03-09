@@ -13,6 +13,21 @@ use crate::config::SharedConfig;
 pub struct PreparedWorkspace {
     pub workspace_id: String,
     pub workspace_path: PathBuf,
+    pub created: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct HookRunResult {
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: Option<i64>,
+    pub timed_out: bool,
+}
+
+impl HookRunResult {
+    pub fn succeeded(&self) -> bool {
+        !self.timed_out && self.exit_code == Some(0)
+    }
 }
 
 #[derive(Clone)]
@@ -44,10 +59,14 @@ impl WorkspaceManager {
         git_ssh_url: &str,
         default_branch: &str,
     ) -> Result<PathBuf> {
-        self.delete_source_clone(previous_slug).await?;
-        if previous_slug != next_slug {
-            self.delete_source_clone(next_slug).await?;
+        if previous_slug == next_slug {
+            return self
+                .ensure_source_clone(next_slug, git_ssh_url, default_branch)
+                .await;
         }
+
+        self.delete_source_clone(previous_slug).await?;
+        self.delete_source_clone(next_slug).await?;
         self.ensure_source_clone(next_slug, git_ssh_url, default_branch)
             .await
     }
@@ -173,6 +192,7 @@ impl WorkspaceManager {
             return Ok(PreparedWorkspace {
                 workspace_id,
                 workspace_path,
+                created: false,
             });
         }
 
@@ -196,6 +216,7 @@ impl WorkspaceManager {
         Ok(PreparedWorkspace {
             workspace_id,
             workspace_path,
+            created: true,
         })
     }
 
@@ -211,7 +232,51 @@ impl WorkspaceManager {
         Ok(PreparedWorkspace {
             workspace_id,
             workspace_path,
+            created: true,
         })
+    }
+
+    pub async fn run_shell_hook(&self, cwd: &Path, script: &str) -> HookRunResult {
+        let trimmed = script.trim();
+        if trimmed.is_empty() {
+            return HookRunResult {
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: Some(0),
+                timed_out: false,
+            };
+        }
+
+        let mut command = Command::new("/bin/sh");
+        command
+            .arg("-lc")
+            .arg(trimmed)
+            .current_dir(cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let timeout_seconds = self.config.hooks.timeout_seconds;
+        match timeout(Duration::from_secs(timeout_seconds), command.output()).await {
+            Ok(Ok(output)) => HookRunResult {
+                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                exit_code: output.status.code().map(i64::from),
+                timed_out: false,
+            },
+            Ok(Err(error)) => HookRunResult {
+                stdout: String::new(),
+                stderr: format!("failed to execute script: {error}"),
+                exit_code: None,
+                timed_out: false,
+            },
+            Err(_) => HookRunResult {
+                stdout: String::new(),
+                stderr: format!("script timed out after {timeout_seconds} seconds"),
+                exit_code: None,
+                timed_out: true,
+            },
+        }
     }
 
     async fn git<I, S>(&self, cwd: &Path, args: I) -> Result<()>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { deleteEnvironment, updateEnvironment } from "@/lib/api";
+import { deleteEnvironment, refreshEnvironment, updateEnvironment } from "@/lib/api";
 import { parseAliases } from "@/lib/environments";
 import { formatUtcTimestamp } from "@/lib/format";
 import { EnvironmentDetail, SessionSummary } from "@/lib/types";
@@ -40,6 +40,9 @@ export function EnvironmentDetailManager({
   const [deletePending, setDeletePending] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [refreshPending, setRefreshPending] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [refreshSuccess, setRefreshSuccess] = useState<string | null>(null);
 
   async function handleUpdate(values: {
     name: string;
@@ -48,9 +51,31 @@ export function EnvironmentDetailManager({
     default_branch: string;
     aliases: string[];
     enabled: boolean;
+    source_setup_script: string;
+    workspace_setup_script: string;
   }) {
-    const response = await updateEnvironment(detail.environment.id, values);
+    const response = await updateEnvironment(detail.environment.id, {
+      ...values,
+      source_setup_script: values.source_setup_script || null,
+      workspace_setup_script: values.workspace_setup_script || null,
+    });
     setDetail(response);
+  }
+
+  async function handleRefreshCache() {
+    setRefreshPending(true);
+    setRefreshError(null);
+    setRefreshSuccess(null);
+    try {
+      const response = await refreshEnvironment(detail.environment.id);
+      setDetail(response);
+      setRefreshSuccess("Cache refresh started.");
+      router.refresh();
+    } catch (error) {
+      setRefreshError(error instanceof Error ? error.message : "Failed to refresh cache.");
+    } finally {
+      setRefreshPending(false);
+    }
   }
 
   async function handleDelete() {
@@ -125,6 +150,18 @@ export function EnvironmentDetailManager({
                 Last source sync error: {detail.environment.source_sync_error}
               </p>
             ) : null}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleRefreshCache}
+                disabled={refreshPending || detail.environment.source_sync_status === "syncing"}
+                className="rounded-md border border-line px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-fog disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {refreshPending ? "Refreshing..." : "Refresh Cache"}
+              </button>
+              {refreshSuccess ? <p className="text-sm text-emerald-700">{refreshSuccess}</p> : null}
+              {refreshError ? <p className="text-sm text-red-700">{refreshError}</p> : null}
+            </div>
             <p className="text-sm text-slate-500">
               Aliases: {parseAliases(detail.environment.aliases).join(", ") || "-"}
             </p>

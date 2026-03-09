@@ -6,6 +6,7 @@ import { EnvironmentDetailManager } from "@/components/environment-detail-manage
 
 const updateEnvironment = vi.fn();
 const deleteEnvironment = vi.fn();
+const refreshEnvironment = vi.fn();
 const push = vi.fn();
 const refresh = vi.fn();
 
@@ -19,12 +20,14 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/lib/api", () => ({
   updateEnvironment: (...args: unknown[]) => updateEnvironment(...args),
   deleteEnvironment: (...args: unknown[]) => deleteEnvironment(...args),
+  refreshEnvironment: (...args: unknown[]) => refreshEnvironment(...args),
 }));
 
 describe("EnvironmentDetailManager", () => {
   beforeEach(() => {
     updateEnvironment.mockReset();
     deleteEnvironment.mockReset();
+    refreshEnvironment.mockReset();
     push.mockReset();
     refresh.mockReset();
   });
@@ -46,6 +49,8 @@ describe("EnvironmentDetailManager", () => {
             source_sync_status: "syncing",
             source_sync_error: null,
             source_synced_at: null,
+            source_setup_script: null,
+            workspace_setup_script: null,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },

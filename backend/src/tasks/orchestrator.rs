@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -170,6 +171,7 @@ pub async fn handle_slack_envelope(
             })
         };
 
+        let mut workspace_setup_script_to_run: Option<String> = None;
         let session = match existing_session {
             Some(session) => {
                 enforce_environment_binding(&session, environment.as_ref())?;
@@ -192,6 +194,11 @@ pub async fn handle_slack_envelope(
                 } else {
                     state.workspaces.prepare_general_workspace(None).await?
                 };
+                if prepared.created {
+                    workspace_setup_script_to_run = environment
+                        .as_ref()
+                        .and_then(|item| normalize_script(item.workspace_setup_script.as_deref()));
+                }
 
                 state
                     .sessions
@@ -258,6 +265,45 @@ pub async fn handle_slack_envelope(
             &resolved_payload_json(&request_text),
         )
         .await?;
+
+        if let Some(workspace_setup_script) = workspace_setup_script_to_run.as_deref() {
+            let hook_result = state
+                .workspaces
+                .run_shell_hook(Path::new(&session.workspace_path), workspace_setup_script)
+                .await;
+            persist_workspace_hook_terminal_output(&state.db, &task_run.id, &hook_result).await?;
+
+            if !hook_result.succeeded() {
+                let hook_error_summary =
+                    summarize_hook_failure_for_task(&hook_result.stderr, &hook_result.stdout);
+                queries::update_task_run_status(
+                    &state.db,
+                    &task_run.id,
+                    "failed",
+                    hook_result.exit_code,
+                    Some(&hook_error_summary),
+                )
+                .await?;
+                state
+                    .sessions
+                    .update_status(
+                        &session.id,
+                        "idle",
+                        workflow.as_ref().map(|item| item.metadata.id.as_str()),
+                    )
+                    .await?;
+                persist_and_send_reply(
+                    &state,
+                    &session.id,
+                    Some(&task_run.id),
+                    &channel_id,
+                    &thread_ts,
+                    &format!("Task failed before execution. {hook_error_summary}"),
+                )
+                .await?;
+                return Ok(RequestOutcome::Rejected);
+            }
+        }
 
         if is_playwright_task_workflow(workflow.as_ref())
             && execution_policy.explicit_cli_playwright_requested
@@ -587,6 +633,67 @@ fn compact_error_excerpt(message: &str) -> String {
         .collect()
 }
 
+fn normalize_script(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn summarize_hook_failure_for_task(stderr: &str, stdout: &str) -> String {
+    let detail = if !stderr.trim().is_empty() {
+        compact_error_excerpt(stderr)
+    } else if !stdout.trim().is_empty() {
+        compact_error_excerpt(stdout)
+    } else {
+        "workspace setup script failed with no output".to_string()
+    };
+    format!("Workspace setup script failed: {detail}")
+}
+
+async fn persist_workspace_hook_terminal_output(
+    pool: &sqlx::SqlitePool,
+    task_run_id: &str,
+    result: &crate::workspaces::session_workspace::HookRunResult,
+) -> Result<()> {
+    let mut sequence = 0_i64;
+    let header = "[workspace setup] Running workspace setup script\n";
+    queries::insert_terminal_event(pool, task_run_id, "stdout", header, sequence).await?;
+    sequence += 1;
+
+    for line in result.stdout.lines() {
+        queries::insert_terminal_event(pool, task_run_id, "stdout", &format!("{line}\n"), sequence)
+            .await?;
+        sequence += 1;
+    }
+
+    for line in result.stderr.lines() {
+        queries::insert_terminal_event(pool, task_run_id, "stderr", &format!("{line}\n"), sequence)
+            .await?;
+        sequence += 1;
+    }
+
+    if result.timed_out {
+        queries::insert_terminal_event(
+            pool,
+            task_run_id,
+            "stderr",
+            "[workspace setup] script timed out\n",
+            sequence,
+        )
+        .await?;
+    } else {
+        let status_line = if result.succeeded() {
+            "[workspace setup] completed successfully\n"
+        } else {
+            "[workspace setup] failed\n"
+        };
+        queries::insert_terminal_event(pool, task_run_id, "stdout", status_line, sequence).await?;
+    }
+
+    Ok(())
+}
+
 fn build_reply_text(output: &RunnerOutput) -> String {
     match output.status.as_str() {
         "cancelled" => "Task cancelled manually.".to_string(),
@@ -699,6 +806,8 @@ mod tests {
             source_sync_status: "ready".to_string(),
             source_sync_error: None,
             source_synced_at: Some(Utc::now()),
+            source_setup_script: None,
+            workspace_setup_script: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

@@ -60,13 +60,15 @@ pub async fn insert_environment(
     default_branch: &str,
     aliases: &str,
     enabled: bool,
+    source_setup_script: Option<&str>,
+    workspace_setup_script: Option<&str>,
 ) -> Result<Environment> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now();
     sqlx::query(
         "INSERT INTO environments (
-            id, name, slug, git_ssh_url, default_branch, aliases, enabled, source_sync_status, source_sync_error, source_synced_at, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)",
+            id, name, slug, git_ssh_url, default_branch, aliases, enabled, source_sync_status, source_sync_error, source_synced_at, source_setup_script, workspace_setup_script, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(name)
@@ -75,7 +77,9 @@ pub async fn insert_environment(
     .bind(default_branch)
     .bind(aliases)
     .bind(enabled)
-    .bind("pending")
+    .bind("syncing")
+    .bind(source_setup_script)
+    .bind(workspace_setup_script)
     .bind(now)
     .bind(now)
     .execute(pool)
@@ -94,10 +98,12 @@ pub async fn update_environment(
     default_branch: &str,
     aliases: &str,
     enabled: bool,
+    source_setup_script: Option<&str>,
+    workspace_setup_script: Option<&str>,
 ) -> Result<Environment> {
     sqlx::query(
         "UPDATE environments
-         SET name = ?, slug = ?, git_ssh_url = ?, default_branch = ?, aliases = ?, enabled = ?, source_sync_status = ?, source_sync_error = NULL, source_synced_at = NULL, updated_at = ?
+         SET name = ?, slug = ?, git_ssh_url = ?, default_branch = ?, aliases = ?, enabled = ?, source_setup_script = ?, workspace_setup_script = ?, source_sync_status = ?, source_sync_error = NULL, source_synced_at = NULL, updated_at = ?
          WHERE id = ?",
     )
     .bind(name)
@@ -106,7 +112,9 @@ pub async fn update_environment(
     .bind(default_branch)
     .bind(aliases)
     .bind(enabled)
-    .bind("pending")
+    .bind(source_setup_script)
+    .bind(workspace_setup_script)
+    .bind("syncing")
     .bind(Utc::now())
     .bind(id)
     .execute(pool)

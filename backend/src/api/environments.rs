@@ -68,6 +68,18 @@ pub async fn delete(
         .map_err(user_error)
 }
 
+pub async fn refresh(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<EnvironmentWithPaths>, (StatusCode, String)> {
+    state
+        .environments
+        .refresh_source(&id)
+        .await
+        .map(Json)
+        .map_err(refresh_error)
+}
+
 pub async fn get(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
@@ -100,4 +112,13 @@ fn internal_error(error: impl std::fmt::Display) -> (StatusCode, String) {
 
 fn user_error(error: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::BAD_REQUEST, error.to_string())
+}
+
+fn refresh_error(error: impl std::fmt::Display) -> (StatusCode, String) {
+    let message = error.to_string();
+    if message.contains("already in progress") {
+        (StatusCode::CONFLICT, message)
+    } else {
+        (StatusCode::BAD_REQUEST, message)
+    }
 }

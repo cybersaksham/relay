@@ -32,35 +32,120 @@ type TerminalServerMessage =
 export function WorkspaceTerminalPanel({
   sessionId,
   workspacePath,
+  threadTs,
+  status,
+  workflowName,
 }: {
   sessionId: string;
   workspacePath: string;
+  threadTs: string;
+  status: string;
+  workflowName: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => setIsOpen((current) => !current)}
-          className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent/90"
-        >
-          {isOpen ? "Hide Workspace Terminal" : "Open Workspace Terminal"}
-        </button>
-      </div>
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
 
-      {isOpen ? <WorkspaceTerminal sessionId={sessionId} workspacePath={workspacePath} /> : null}
-    </div>
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  return (
+    <>
+      <section className="surface sticky top-4 z-20 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs uppercase tracking-[0.18em] text-slate-500">Task</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold text-ink">Thread {threadTs}</h1>
+              <span className="rounded-full border border-line px-2.5 py-1 text-xs font-medium uppercase tracking-[0.12em] text-slate-600">
+                {status}
+              </span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                {workflowName}
+              </span>
+            </div>
+            <p className="mt-1 truncate font-mono text-xs text-slate-500">{workspacePath}</p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsOpen(true)}
+            aria-label="Open workspace terminal"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-line bg-white text-slate-700 transition hover:bg-fog"
+          >
+            <TerminalIcon />
+          </button>
+        </div>
+      </section>
+
+      {isOpen ? (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/45"
+          onClick={() => setIsOpen(false)}
+          role="presentation"
+        >
+          <div className="flex h-full items-end justify-center px-4 pb-0 pt-8">
+            <section
+              className="max-h-[85vh] w-full max-w-6xl overflow-hidden rounded-t-[28px] border border-line bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+              aria-label="Workspace terminal"
+            >
+              <div className="flex justify-center pt-3">
+                <div className="h-1.5 w-14 rounded-full bg-slate-200" />
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-ink">Workspace Terminal</h2>
+                  <p className="mt-1 text-sm text-slate-500">{workspacePath}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="rounded-full border border-line px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-fog"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="overflow-y-auto">
+                <WorkspaceTerminal
+                  sessionId={sessionId}
+                  workspacePath={workspacePath}
+                  inSheet
+                />
+              </div>
+            </section>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
 function WorkspaceTerminal({
   sessionId,
   workspacePath,
+  inSheet = false,
 }: {
   sessionId: string;
   workspacePath: string;
+  inSheet?: boolean;
 }) {
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("connecting");
@@ -225,10 +310,18 @@ function WorkspaceTerminal({
   }, [sessionId, workspacePath]);
 
   return (
-    <section className="surface overflow-hidden">
-      <div className="surface-header flex flex-wrap items-center justify-between gap-3">
+    <section className={inSheet ? "space-y-4 p-5" : "surface overflow-hidden"}>
+      <div
+        className={
+          inSheet
+            ? "flex flex-wrap items-center justify-between gap-3"
+            : "surface-header flex flex-wrap items-center justify-between gap-3"
+        }
+      >
         <div>
-          <h2 className="text-lg font-semibold text-ink">Workspace Terminal</h2>
+          <h2 className="text-lg font-semibold text-ink">
+            {inSheet ? "Live Workspace Shell" : "Workspace Terminal"}
+          </h2>
           <p className="mt-1 text-sm text-slate-500">{statusMessage}</p>
         </div>
         <span
@@ -237,7 +330,7 @@ function WorkspaceTerminal({
           {connectionState}
         </span>
       </div>
-      <div className="surface-body space-y-4">
+      <div className={inSheet ? "space-y-4" : "surface-body space-y-4"}>
         <div className="grid gap-3 rounded-xl border border-line bg-slate-50 p-4 text-sm text-slate-600 lg:grid-cols-2">
           <div>
             <div className="text-xs uppercase tracking-[0.18em] text-slate-500">Shell</div>
@@ -251,9 +344,30 @@ function WorkspaceTerminal({
 
         <div
           ref={terminalRef}
-          className="h-[460px] overflow-hidden rounded-xl border border-slate-800 bg-slate-950 p-2"
+          className={`overflow-hidden rounded-xl border border-slate-800 bg-slate-950 p-2 ${
+            inSheet ? "h-[min(52vh,460px)]" : "h-[460px]"
+          }`}
         />
       </div>
     </section>
+  );
+}
+
+function TerminalIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-5 w-5"
+    >
+      <path d="m4 17 6-5-6-5" />
+      <path d="M12 19h8" />
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+    </svg>
   );
 }

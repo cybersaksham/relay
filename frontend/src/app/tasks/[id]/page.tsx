@@ -13,15 +13,12 @@ export default async function TaskPage({
 
   return (
     <div className="page-shell">
-      <div>
-        <h1 className="text-3xl font-semibold text-ink">
-          Thread {task.session.thread_ts}
-        </h1>
-      </div>
-
       <WorkspaceTerminalPanel
         sessionId={task.session.id}
         workspacePath={task.session.workspace_path}
+        threadTs={task.session.thread_ts}
+        status={(task.latest_run?.status ?? task.session.status).replaceAll("_", " ")}
+        workflowName={task.latest_run?.workflow_name ?? "Generic run"}
       />
 
       <section className="surface overflow-hidden">

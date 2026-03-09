@@ -63,7 +63,9 @@ impl SlackMessageManager {
             return Err(anyhow!("message text cannot be empty"));
         }
 
-        self.slack.update_message(channel_id, ts, updated_text).await?;
+        self.slack
+            .update_message(channel_id, ts, updated_text)
+            .await?;
         let identity = self.slack.auth_identity().await?;
         let message = self.slack.fetch_message(channel_id, ts, thread_ts).await?;
         ensure_message_owned_by_bot(&message, &identity)?;
@@ -166,10 +168,9 @@ mod tests {
 
     #[test]
     fn parses_standard_slack_permalink() {
-        let target = parse_slack_permalink(
-            "https://example.slack.com/archives/C12345678/p1736451111222233",
-        )
-        .expect("target");
+        let target =
+            parse_slack_permalink("https://example.slack.com/archives/C12345678/p1736451111222233")
+                .expect("target");
 
         assert_eq!(target.channel_id, "C12345678");
         assert_eq!(target.message_ts, "1736451111.222233");

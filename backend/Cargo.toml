@@ -7,7 +7,7 @@ edition = "2021"
 anyhow = "1.0"
 async-trait = "0.1"
 async-stream = "0.3"
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.7", features = ["macros", "ws"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5.0"
 dotenvy = "0.15"

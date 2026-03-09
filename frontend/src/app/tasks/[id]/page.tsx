@@ -1,4 +1,5 @@
 import { ThreadConversation } from "@/components/thread-conversation";
+import { WorkspaceTerminalPanel } from "@/components/workspace-terminal-panel";
 import { getTask, getTaskMessages } from "@/lib/api";
 import { formatUtcTimestamp } from "@/lib/format";
 
@@ -17,6 +18,11 @@ export default async function TaskPage({
           Thread {task.session.thread_ts}
         </h1>
       </div>
+
+      <WorkspaceTerminalPanel
+        sessionId={task.session.id}
+        workspacePath={task.session.workspace_path}
+      />
 
       <section className="surface overflow-hidden">
         <table className="data-table">

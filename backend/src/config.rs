@@ -12,6 +12,7 @@ pub struct Config {
     pub slack: SlackConfig,
     pub authorization: AuthorizationConfig,
     pub codex: CodexConfig,
+    pub terminal: TerminalConfig,
     pub hooks: HookConfig,
     pub paths: PathConfig,
 }
@@ -54,6 +55,11 @@ pub struct CodexConfig {
 #[derive(Debug, Clone)]
 pub struct HookConfig {
     pub timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct TerminalConfig {
+    pub command: String,
 }
 
 #[derive(Debug, Clone)]
@@ -137,6 +143,9 @@ impl Config {
                 .unwrap_or_else(|_| "20".to_string())
                 .parse()
                 .context("PLAYWRIGHT_CLI_PREFLIGHT_TIMEOUT_SECONDS must be a valid u64")?,
+            },
+            terminal: TerminalConfig {
+                command: env_or("TERMINAL_COMMAND", "/bin/zsh"),
             },
             hooks: HookConfig {
                 timeout_seconds: env::var("ENV_HOOK_TIMEOUT_SECONDS")

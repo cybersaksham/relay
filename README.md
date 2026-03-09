@@ -82,6 +82,7 @@ docker compose --env-file .env up --build
 - Local DB default: SQLite via `DATABASE_URL=sqlite:relay.db`
 - Socket Mode requires both `SLACK_BOT_TOKEN` and `SLACK_APP_TOKEN`
 - Codex execution uses the `codex` binary from `PATH` unless overridden by `CODEX_BIN`
+- Workspace terminal sessions use `TERMINAL_COMMAND` and default to `/bin/zsh`
 - All Git operations use the system `git` and SSH configuration directly.
 - Backend and frontend ports are required env values. Neither service falls back to an in-code default port.
 - Environment creation requires an explicit default branch. There is no global branch fallback in env.

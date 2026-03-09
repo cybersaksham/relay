@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import "@xterm/xterm/css/xterm.css";
 import "@/app/globals.css";
 import "@/styles/theme.css";
 import { AppShellNav } from "@/components/app-shell-nav";

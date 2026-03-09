@@ -17,6 +17,7 @@ use relay_backend::runner::Runner;
 use relay_backend::slack;
 use relay_backend::slack::web_api::SlackWebClient;
 use relay_backend::tasks::session_service::SessionService;
+use relay_backend::terminal::TerminalManager;
 use relay_backend::utils;
 use relay_backend::workflows::loader::WorkflowRegistry;
 use relay_backend::workspaces::session_workspace::WorkspaceManager;
@@ -46,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
     ));
     let slack_client = Arc::new(SlackWebClient::new(config.clone()));
     let session_service = Arc::new(SessionService::new(db.pool().clone()));
+    let terminal_manager = Arc::new(TerminalManager::new(config.clone()));
     let runner: Arc<dyn Runner> = Arc::new(CodexCliRunner::new(config.clone(), db.pool().clone()));
 
     let state = Arc::new(AppState::new(
@@ -57,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
         environment_service,
         workspace_manager,
         session_service,
+        terminal_manager,
         runner,
     ));
 

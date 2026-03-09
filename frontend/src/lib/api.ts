@@ -149,3 +149,9 @@ export async function deleteSlackMessage(payload: {
 export function getSseUrl(path: string): string {
   return `${SSE_BASE_URL}${path}`;
 }
+
+export function getWebSocketUrl(path: string): string {
+  const url = new URL(path, API_BASE_URL);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}

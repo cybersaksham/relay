@@ -7,6 +7,7 @@ pub mod policies;
 pub mod runner;
 pub mod slack;
 pub mod tasks;
+pub mod terminal;
 pub mod utils;
 pub mod workflows;
 pub mod workspaces;

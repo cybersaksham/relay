@@ -35,6 +35,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/tasks/:id/messages", get(tasks::messages))
         .route("/api/tasks/:id/cancel", post(tasks::cancel))
         .route(
+            "/api/tasks/:id/workspace-terminal/ws",
+            get(tasks::terminal_socket),
+        )
+        .route(
             "/api/tasks/:id/terminal/stream",
             get(streams::terminal_stream),
         )

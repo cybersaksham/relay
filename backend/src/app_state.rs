@@ -8,6 +8,7 @@ use crate::policies::evaluator::PolicyEngine;
 use crate::runner::Runner;
 use crate::slack::web_api::SlackWebClient;
 use crate::tasks::session_service::SessionService;
+use crate::terminal::TerminalManager;
 use crate::workflows::loader::WorkflowRegistry;
 use crate::workspaces::session_workspace::WorkspaceManager;
 
@@ -21,6 +22,7 @@ pub struct AppState {
     pub environments: Arc<EnvironmentService>,
     pub workspaces: Arc<WorkspaceManager>,
     pub sessions: Arc<SessionService>,
+    pub terminals: Arc<TerminalManager>,
     pub runner: Arc<dyn Runner>,
 }
 
@@ -35,6 +37,7 @@ impl AppState {
         environments: Arc<EnvironmentService>,
         workspaces: Arc<WorkspaceManager>,
         sessions: Arc<SessionService>,
+        terminals: Arc<TerminalManager>,
         runner: Arc<dyn Runner>,
     ) -> Self {
         Self {
@@ -46,6 +49,7 @@ impl AppState {
             environments,
             workspaces,
             sessions,
+            terminals,
             runner,
         }
     }

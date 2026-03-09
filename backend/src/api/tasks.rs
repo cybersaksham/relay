@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    extract::{ws::WebSocketUpgrade, Path, State},
     http::StatusCode,
+    response::Response,
     Json,
 };
 use serde::Serialize;
@@ -126,6 +127,36 @@ pub async fn cancel(
     Ok(Json(CancelTaskResponse {
         task_run_id: active_run.id,
         status: "cancellation_requested".to_string(),
+    }))
+}
+
+pub async fn terminal_socket(
+    ws: WebSocketUpgrade,
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Response, (StatusCode, String)> {
+    let session = queries::get_session(&state.db, &id)
+        .await
+        .map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "task thread not found".to_string()))?;
+
+    state
+        .terminals
+        .ensure_started(&session.id, &session.workspace_path)
+        .await
+        .map_err(internal_error)?;
+
+    Ok(ws.on_upgrade(move |socket| {
+        let state = state.clone();
+        async move {
+            if let Err(error) = state
+                .terminals
+                .handle_socket(socket, session.id, session.workspace_path)
+                .await
+            {
+                tracing::warn!(?error, "workspace terminal socket closed with error");
+            }
+        }
     }))
 }
 

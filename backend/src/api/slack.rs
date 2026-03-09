@@ -1,10 +1,6 @@
 use std::sync::Arc;
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use serde::Deserialize;
 
 use crate::app_state::AppState;
@@ -67,7 +63,11 @@ pub async fn delete_message(
     Json(payload): Json<DeleteSlackMessageRequest>,
 ) -> Result<Json<DeleteSlackMessageResponse>, (StatusCode, String)> {
     SlackMessageManager::new(state.slack.as_ref().clone())
-        .delete_message(&payload.channel_id, &payload.ts, payload.thread_ts.as_deref())
+        .delete_message(
+            &payload.channel_id,
+            &payload.ts,
+            payload.thread_ts.as_deref(),
+        )
         .await
         .map(|_| Json(DeleteSlackMessageResponse { deleted: true }))
         .map_err(user_error)

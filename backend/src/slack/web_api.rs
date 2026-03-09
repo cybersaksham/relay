@@ -136,8 +136,9 @@ impl SlackWebClient {
     }
 
     pub async fn auth_identity(&self) -> Result<SlackAuthIdentity> {
-        let response: SlackAuthTestResponse =
-            self.api_post_with_token("auth.test", json!({}), false).await?;
+        let response: SlackAuthTestResponse = self
+            .api_post_with_token("auth.test", json!({}), false)
+            .await?;
         if response.ok {
             Ok(SlackAuthIdentity {
                 user_id: response
@@ -209,9 +210,9 @@ impl SlackWebClient {
                 .find(|message| message.ts == ts)
                 .ok_or_else(|| anyhow!("message not found"))
         } else {
-            Err(anyhow!(response
-                .error
-                .unwrap_or_else(|| "thread message fetch failed".to_string())))
+            Err(anyhow!(response.error.unwrap_or_else(|| {
+                "thread message fetch failed".to_string()
+            })))
         }
     }
 

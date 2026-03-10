@@ -42,12 +42,18 @@ impl Runner for CodexCliRunner {
         );
         let mut command = Command::new(&self.config.codex.bin);
         command
+            .arg("--ask-for-approval")
+            .arg("never")
             .arg("exec")
+            .arg("--sandbox")
+            .arg("workspace-write")
             .arg("--skip-git-repo-check")
             .arg("--color")
             .arg("never")
             .arg("-o")
             .arg(&output_last_message_path)
+            .arg("-c")
+            .arg("sandbox_workspace_write.network_access=true")
             .args(&self.config.codex.default_args)
             .arg(&input.prompt)
             .current_dir(&input.workspace_path)

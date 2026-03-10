@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -54,7 +55,13 @@ impl Runner for CodexCliRunner {
             .arg(&output_last_message_path)
             .arg("-c")
             .arg("sandbox_workspace_write.network_access=true")
-            .args(&self.config.codex.default_args)
+            .args(&self.config.codex.default_args);
+
+        for dir in sandbox_writable_dirs(&input.workspace_path) {
+            command.arg("--add-dir").arg(dir);
+        }
+
+        command
             .arg(&input.prompt)
             .current_dir(&input.workspace_path)
             .stdin(Stdio::null())
@@ -196,5 +203,36 @@ async fn read_last_message(path: &str, fallback: &str) -> String {
             content
         }
         _ => fallback.to_string(),
+    }
+}
+
+fn sandbox_writable_dirs(workspace_path: &str) -> Vec<String> {
+    let workspace = Path::new(workspace_path);
+    let git_dir = workspace.join(".git");
+
+    if git_dir.exists() {
+        vec![git_dir.display().to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::sandbox_writable_dirs;
+
+    #[test]
+    fn includes_git_metadata_dirs_when_present() {
+        let temp = tempdir().expect("tempdir");
+        let workspace = temp.path();
+        fs::create_dir_all(workspace.join(".git/modules/iconland")).expect("create git modules");
+
+        let dirs = sandbox_writable_dirs(workspace.to_str().expect("workspace path"));
+
+        assert_eq!(dirs, vec![workspace.join(".git").display().to_string()]);
     }
 }

@@ -34,7 +34,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/tasks/:id", get(tasks::get))
         .route("/api/tasks/:id/messages", get(tasks::messages))
         .route("/api/tasks/:id/cancel", post(tasks::cancel))
-        .route("/api/tasks/:id/workspace-git-diff", get(tasks::workspace_git_diff))
+        .route(
+            "/api/tasks/:id/workspace-git-diff",
+            get(tasks::workspace_git_diff),
+        )
         .route(
             "/api/tasks/:id/workspace-git-diff/stage",
             post(tasks::stage_workspace_git_file),

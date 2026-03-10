@@ -333,12 +333,16 @@ impl WorkspaceManager {
             let path = parse_status_path(raw_path);
             let status = describe_git_status(index_status, worktree_status).to_string();
             let staged = index_status != ' ' && index_status != '?';
-            let can_stage = worktree_status != ' ' || (index_status == '?' && worktree_status == '?');
+            let can_stage =
+                worktree_status != ' ' || (index_status == '?' && worktree_status == '?');
             let diff = if index_status == '?' && worktree_status == '?' {
                 self.untracked_diff(workspace_path, &path).await?
             } else {
-                self.git_output(workspace_path, ["diff", "--no-ext-diff", "HEAD", "--", &path])
-                    .await?
+                self.git_output(
+                    workspace_path,
+                    ["diff", "--no-ext-diff", "HEAD", "--", &path],
+                )
+                .await?
             };
 
             files.push(WorkspaceGitDiffFile {
@@ -479,11 +483,7 @@ impl WorkspaceManager {
         }
     }
 
-    async fn run_git_command<I, S>(
-        &self,
-        cwd: &Path,
-        args: I,
-    ) -> Result<std::process::Output>
+    async fn run_git_command<I, S>(&self, cwd: &Path, args: I) -> Result<std::process::Output>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -505,7 +505,14 @@ impl WorkspaceManager {
     async fn untracked_diff(&self, cwd: &Path, path: &str) -> Result<String> {
         self.git_output_allow_failure(
             cwd,
-            ["diff", "--no-index", "--no-ext-diff", "--", "/dev/null", path],
+            [
+                "diff",
+                "--no-index",
+                "--no-ext-diff",
+                "--",
+                "/dev/null",
+                path,
+            ],
             &[1],
         )
         .await
@@ -524,7 +531,9 @@ fn sanitize_workspace_relative_path(file_path: &str) -> Result<PathBuf> {
             Component::Normal(part) => cleaned.push(part),
             Component::CurDir => {}
             Component::ParentDir => {
-                return Err(anyhow!("workspace file path cannot traverse parent directories"));
+                return Err(anyhow!(
+                    "workspace file path cannot traverse parent directories"
+                ));
             }
             _ => return Err(anyhow!("workspace file path is invalid")),
         }

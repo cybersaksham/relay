@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::config::SharedConfig;
-use crate::slack::thread_context::SlackReplyMessage;
+use crate::slack::thread_context::{SlackReplyMessage, SlackThreadFile};
 
 #[derive(Clone)]
 pub struct SlackWebClient {
@@ -67,6 +67,8 @@ pub struct SlackFetchedMessage {
     pub bot_id: Option<String>,
     pub text: Option<String>,
     pub thread_ts: Option<String>,
+    #[serde(default)]
+    pub files: Vec<SlackThreadFile>,
 }
 
 impl SlackWebClient {
@@ -317,6 +319,24 @@ impl SlackWebClient {
                 .error
                 .unwrap_or_else(|| "reaction add failed".to_string())))
         }
+    }
+
+    pub async fn download_private_file(&self, url: &str) -> Result<Vec<u8>> {
+        let response = self
+            .client
+            .get(url)
+            .bearer_auth(&self.config.slack.bot_token)
+            .send()
+            .await
+            .context("failed to request Slack file download")?
+            .error_for_status()
+            .context("Slack file download returned an error status")?;
+
+        Ok(response
+            .bytes()
+            .await
+            .context("failed to read Slack file bytes")?
+            .to_vec())
     }
 
     async fn api_post_with_token<T: DeserializeOwned>(

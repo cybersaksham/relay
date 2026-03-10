@@ -3,8 +3,9 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::json;
+use tokio::fs;
 use tokio::process::Command;
 use tokio::time::timeout;
 use tracing::{info, warn};
@@ -360,6 +361,13 @@ pub async fn handle_slack_envelope(
             }
         }
 
+        let thread = materialize_thread_attachments(
+            &state.slack,
+            Path::new(&session.workspace_path),
+            thread,
+        )
+        .await?;
+
         let prompt = renderer::render_prompt(
             workflow.as_ref(),
             environment.as_ref(),
@@ -581,6 +589,92 @@ fn apply_browser_execution_directive(prompt: String, policy: &RequestExecutionPo
     directive.push('\n');
     directive.push_str(&prompt);
     directive
+}
+
+async fn materialize_thread_attachments(
+    slack: &crate::slack::web_api::SlackWebClient,
+    workspace_path: &Path,
+    mut thread: crate::slack::thread_context::NormalizedThread,
+) -> Result<crate::slack::thread_context::NormalizedThread> {
+    let attachments_root =
+        thread_attachment_root(workspace_path).join(sanitize_path_component(&thread.thread_ts));
+
+    for message in &mut thread.messages {
+        if message.attachments.is_empty() {
+            continue;
+        }
+
+        let message_dir = attachments_root.join(sanitize_path_component(&message.ts));
+        fs::create_dir_all(&message_dir)
+            .await
+            .with_context(|| format!("failed to prepare {}", message_dir.display()))?;
+
+        for (index, attachment) in message.attachments.iter_mut().enumerate() {
+            let Some(download_url) = attachment.download_url.as_deref() else {
+                continue;
+            };
+
+            let filename = sanitized_attachment_filename(
+                &attachment.name,
+                attachment.filetype.as_deref(),
+                index,
+            );
+            let destination = message_dir.join(filename);
+            if !destination.exists() {
+                let bytes = slack
+                    .download_private_file(download_url)
+                    .await
+                    .with_context(|| {
+                        format!("failed to download Slack attachment {}", attachment.name)
+                    })?;
+                fs::write(&destination, bytes)
+                    .await
+                    .with_context(|| format!("failed to write {}", destination.display()))?;
+            }
+            attachment.local_path = Some(destination.display().to_string());
+        }
+    }
+
+    Ok(thread)
+}
+
+fn thread_attachment_root(workspace_path: &Path) -> std::path::PathBuf {
+    let git_dir = workspace_path.join(".git");
+    if git_dir.is_dir() {
+        git_dir.join("relay-thread-context")
+    } else {
+        workspace_path.join(".relay-thread-context")
+    }
+}
+
+fn sanitized_attachment_filename(name: &str, filetype: Option<&str>, index: usize) -> String {
+    let trimmed = name.trim();
+    let sanitized = if trimmed.is_empty() {
+        String::new()
+    } else {
+        sanitize_path_component(trimmed)
+    };
+
+    if !sanitized.is_empty() {
+        return sanitized;
+    }
+
+    let extension = filetype
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| format!(".{}", sanitize_path_component(value)));
+    format!("attachment-{}{}", index + 1, extension.unwrap_or_default())
+}
+
+fn sanitize_path_component(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| match character {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '_' | '-' => character,
+            _ => '_',
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string()
 }
 
 async fn run_playwright_cli_preflight(config: &SharedConfig) -> Result<(), CliPreflightError> {

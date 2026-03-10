@@ -152,6 +152,18 @@ fn build_selector_prompt(
             message.author_label,
             compact_text(&message.text, 220)
         ));
+        if !message.attachments.is_empty() {
+            let attachment_names = message
+                .attachments
+                .iter()
+                .map(|attachment| attachment.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            prompt.push_str(&format!(
+                "  attachments: {}\n",
+                compact_text(&attachment_names, 220)
+            ));
+        }
     }
     prompt.push('\n');
     prompt.push_str("Available workflows:\n");

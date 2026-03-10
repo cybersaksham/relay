@@ -80,7 +80,10 @@ pub async fn handle_slack_envelope(
                 .post_message(
                     &channel_id,
                     &thread_ts,
-                    "You are not allowed to use this bot.",
+                    &format!(
+                        "<@{}>, This bot is enabled only for Saksham right now. We will roll out for others soon!!",
+                        user_id
+                    ),
                 )
                 .await?;
             return Ok(RequestOutcome::Rejected);
@@ -959,6 +962,8 @@ mod tests {
     #[test]
     fn skips_kickoff_message_for_general_threads() {
         assert!(!should_post_task_kickoff_message(None));
-        assert!(should_post_task_kickoff_message(Some(&sample_environment("env-1"))));
+        assert!(should_post_task_kickoff_message(Some(&sample_environment(
+            "env-1"
+        ))));
     }
 }

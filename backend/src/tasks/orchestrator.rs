@@ -266,21 +266,23 @@ pub async fn handle_slack_envelope(
         )
         .await?;
 
-        let kickoff_message = build_task_kickoff_message(
-            &state.config,
-            &session,
-            environment.as_ref(),
-            workflow.as_ref(),
-        );
-        persist_and_send_reply(
-            &state,
-            &session.id,
-            Some(&task_run.id),
-            &channel_id,
-            &thread_ts,
-            &kickoff_message,
-        )
-        .await?;
+        if should_post_task_kickoff_message(environment.as_ref()) {
+            let kickoff_message = build_task_kickoff_message(
+                &state.config,
+                &session,
+                environment.as_ref(),
+                workflow.as_ref(),
+            );
+            persist_and_send_reply(
+                &state,
+                &session.id,
+                Some(&task_run.id),
+                &channel_id,
+                &thread_ts,
+                &kickoff_message,
+            )
+            .await?;
+        }
 
         if let Some(workspace_setup_script) = workspace_setup_script_to_run.as_deref() {
             let hook_result = state
@@ -732,6 +734,10 @@ fn build_task_kickoff_message(
     )
 }
 
+fn should_post_task_kickoff_message(environment: Option<&Environment>) -> bool {
+    environment.is_some()
+}
+
 fn build_reply_text(output: &RunnerOutput) -> String {
     match output.status.as_str() {
         "cancelled" => "Task cancelled manually.".to_string(),
@@ -811,7 +817,7 @@ mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
 
-    use super::enforce_environment_binding;
+    use super::{enforce_environment_binding, should_post_task_kickoff_message};
     use crate::db::models::{Environment, Session};
     use crate::workflows::loader::{WorkflowDefinition, WorkflowMetadata, WorkflowRegistry};
     use chrono::Utc;
@@ -948,5 +954,11 @@ mod tests {
         let policy = super::classify_request_execution_policy("Use Playwright CLI skill");
         let prompt = super::apply_browser_execution_directive("Base prompt".to_string(), &policy);
         assert!(prompt.contains("CLI path is allowed"));
+    }
+
+    #[test]
+    fn skips_kickoff_message_for_general_threads() {
+        assert!(!should_post_task_kickoff_message(None));
+        assert!(should_post_task_kickoff_message(Some(&sample_environment("env-1"))));
     }
 }
